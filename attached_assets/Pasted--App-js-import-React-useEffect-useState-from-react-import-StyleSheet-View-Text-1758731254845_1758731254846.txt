@@ -1,0 +1,349 @@
+// App.js
+
+import React, { useEffect, useState } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ImageBackground,
+  Image,
+  TouchableOpacity,
+  Animated,
+  Easing,
+  Dimensions,
+  ScrollView,
+} from 'react-native';
+
+// Assets URLs or local require
+const BACKGROUND_IMAGE = 'https://i.imgur.com/yourBackgroundImage.jpg'; // Replace with actual hosted background image URL or local asset
+const SPICE_LOGO = 'https://i.imgur.com/yourSpiceLogo.png'; // Replace with actual hosted logo URL or local asset
+
+const windowWidth = Dimensions.get('window').width;
+
+const headlineWords = [
+  'Start',
+  'your',
+  'dating',
+  'journey',
+  'today',
+];
+
+const subtext =
+  'Join thousands of adventurous singles\nand couples exploring connections in a\nsafe, premium environment.';
+
+export default function App() {
+  // Animation states
+  const [showHeadline, setShowHeadline] = useState(false);
+  const [showSubtext, setShowSubtext] = useState(false);
+  const [showButtons, setShowButtons] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+
+  // Animated values
+  const spiceLogoScale = new Animated.Value(1);
+  const glowOpacitySignIn = new Animated.Value(0.5);
+  const glowOpacitySignUp = new Animated.Value(0.5);
+  const headlineOpacities = headlineWords.map(() => new Animated.Value(0));
+  const headlineOffsets = headlineWords.map(() => new Animated.Value(20));
+
+  useEffect(() => {
+    animateLogo();
+    animateHeadline();
+    // Chain other animations with delay
+    setTimeout(() => setShowSubtext(true), 1500);
+    setTimeout(() => setShowButtons(true), 2000);
+    setTimeout(() => setShowDisclaimer(true), 2500);
+  }, []);
+
+  // Logo pulse animation loop
+  const animateLogo = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(spiceLogoScale, {
+          toValue: 1.05,
+          duration: 1500,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        Animated.timing(spiceLogoScale, {
+          toValue: 1.0,
+          duration: 1500,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.ease),
+        }),
+      ]),
+    ).start();
+  };
+
+  // Headline words animation sequence
+  const animateHeadline = () => {
+    headlineWords.forEach((_, i) => {
+      setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(headlineOpacities[i], {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(headlineOffsets[i], {
+            toValue: 0,
+            duration: 500,
+            easing: Easing.out(Easing.spring(1)),
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }, i * 100);
+    });
+    setShowHeadline(true);
+  };
+
+  // Glow animation for buttons
+  const animateGlow = (glowValue) => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowValue, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: false,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        Animated.timing(glowValue, {
+          toValue: 0.5,
+          duration: 1200,
+          useNativeDriver: false,
+          easing: Easing.inOut(Easing.ease),
+        }),
+      ]),
+    ).start();
+  };
+
+  useEffect(() => {
+    animateGlow(glowOpacitySignIn);
+    animateGlow(glowOpacitySignUp);
+  }, []);
+
+  // Handlers for button presses
+  const onSignInPress = () => {
+    console.log('Sign In tapped');
+  };
+  const onSignUpPress = () => {
+    console.log('Sign Up tapped');
+  };
+
+  return (
+    <ImageBackground
+      source={{
+        uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80',
+      }}
+      style={styles.background}
+      blurRadius={8}
+    >
+      {/* Overlay gradient */}
+      <View style={styles.overlayGradient} />
+
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Spacer */}
+        <View style={{ flex: 1 }} />
+
+        {/* SPICE Logo */}
+        <Animated.Image
+          source={{ uri: 'https://i.imgur.com/9Gxlq3F.png' }} // Use actual SPICE logo URL or local asset
+          style={[
+            styles.spiceLogo,
+            {
+              transform: [{ scale: spiceLogoScale }],
+            },
+          ]}
+          resizeMode="contain"
+        />
+
+        {/* Headline */}
+        <View style={styles.headlineContainer}>
+          {headlineWords.map((word, index) => (
+            <Animated.Text
+              key={index}
+              style={[
+                styles.headlineText,
+                {
+                  opacity: headlineOpacities[index],
+                  transform: [{ translateY: headlineOffsets[index] }],
+                },
+              ]}
+            >
+              {word}
+            </Animated.Text>
+          ))}
+        </View>
+
+        {/* Subtext */}
+        {showSubtext && (
+          <Text style={styles.subtext}>{subtext}</Text>
+        )}
+
+        {/* Buttons */}
+        {showButtons && (
+          <View style={styles.buttonsContainer}>
+            <AnimatedTouchableOpacity
+              glowOpacity={glowOpacitySignIn}
+              onPress={onSignInPress}
+              text="Sign In"
+            />
+            <AnimatedTouchableOpacity
+              glowOpacity={glowOpacitySignUp}
+              onPress={onSignUpPress}
+              text="Sign Up"
+            />
+          </View>
+        )}
+
+        {/* Disclaimer Card */}
+        {showDisclaimer && (
+          <View style={styles.disclaimerCard}>
+            <View style={styles.disclaimerHeader}>
+              <Text style={styles.disclaimerIcon}>⚠️</Text>
+              <Text style={styles.disclaimerTitle}>Adults Only Platform</Text>
+            </View>
+            <Text style={styles.disclaimerText}>
+              Premium lifestyle community for 18+ verified{'\n'}members only.
+            </Text>
+            <Text style={styles.disclaimerText}>
+              Your privacy and discretion are our top priorities.
+            </Text>
+          </View>
+        )}
+
+        {/* Spacer */}
+        <View style={{ flex: 2 }} />
+      </ScrollView>
+    </ImageBackground>
+  );
+}
+
+// Custom animated button with glowing effect
+const AnimatedTouchableOpacity = ({ glowOpacity, onPress, text }) => {
+  return (
+    <Animated.View
+      style={[
+        styles.animatedButton,
+        {
+          borderColor: glowOpacity.interpolate({
+            inputRange: [0.5, 1],
+            outputRange: ['rgba(255, 20, 147, 0.5)', 'rgba(255, 20, 147, 1)'], // pink glow
+          }),
+          shadowColor: 'rgba(255, 20, 147, 0.9)',
+          shadowOpacity: glowOpacity,
+          shadowRadius: glowOpacity.interpolate({
+            inputRange: [0.5, 1],
+            outputRange: [4, 8],
+          }),
+        },
+      ]}
+    >
+      <TouchableOpacity onPress={onPress} style={styles.buttonTouchable}>
+        <Text style={styles.buttonText}>{text}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+const styles = StyleSheet.create({
+  background: {
+    flex: 1,
+    resizeMode: 'cover',
+    backgroundColor: '#000',
+  },
+  overlayGradient: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+  },
+  container: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    paddingVertical: 40,
+  },
+  spiceLogo: {
+    width: 200,
+    height: 70,
+    alignSelf: 'center',
+    marginBottom: 5,
+  },
+  headlineContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  headlineText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginHorizontal: 4,
+    textAlign: 'center',
+  },
+  subtext: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    marginBottom: 40,
+    lineHeight: 22,
+    whiteSpace: 'pre-line',
+  },
+  buttonsContainer: {
+    width: '100%',
+  },
+  animatedButton: {
+    borderRadius: 30,
+    borderWidth: 3,
+    marginVertical: 8,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  buttonTouchable: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: '#191919',
+    borderRadius: 30,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 18,
+  },
+  disclaimerCard: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 20, 147, 0.6)',
+    padding: 15,
+    marginTop: 40,
+    shadowColor: 'rgba(255, 20, 147, 0.8)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  disclaimerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  disclaimerIcon: {
+    fontSize: 20,
+    color: 'pink',
+    marginRight: 8,
+  },
+  disclaimerTitle: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    color: '#fff',
+  },
+  disclaimerText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+});
