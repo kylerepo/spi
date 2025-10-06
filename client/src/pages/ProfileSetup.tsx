@@ -550,24 +550,8 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
         })
       }
 
-      // Save photos
-      if (uploadedPhotos.length > 0) {
-        for (let i = 0; i < uploadedPhotos.length; i++) {
-          const photo = uploadedPhotos[i]
-          await fetch('/api/profile/photos', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              url: photo.url,
-              isProfile: i === 0, // First photo is main profile photo
-              order: i,
-            })
-          })
-        }
-      }
+      // Photos are already saved when uploaded via /api/upload/profile-photo
+      // No need to save them again here
 
       setSuccess("Profile saved! Complete your profile to start connecting.")
       setShowSuccessDialog(false)
