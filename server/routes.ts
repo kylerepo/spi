@@ -52,24 +52,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create profile
+  // Create or update profile
   app.post("/api/profile", authenticateUser, async (req, res) => {
     try {
-      const { data, error } = await supabaseAdmin
+      console.log("[v0] Profile update request:", { userId: req.user.id, body: req.body })
+
+      // Check if profile exists
+      const { data: existingProfile, error: fetchError } = await supabaseAdmin
         .from("profiles")
-        .insert([
-          {
-            user_id: req.user.id,
-            ...req.body,
-          },
-        ])
-        .select()
+        .select("*")
+        .eq("user_id", req.user.id)
         .single()
 
-      if (error) throw error
-      res.json(data)
+      if (fetchError && fetchError.code !== "PGRST116") {
+        // PGRST116 = no rows found, which is fine
+        console.error("[v0] Error fetching profile:", fetchError)
+        throw fetchError
+      }
+
+      let result
+      if (existingProfile) {
+        // Update existing profile
+        console.log("[v0] Updating existing profile:", existingProfile.id)
+        const { data, error } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            ...req.body,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", req.user.id)
+          .select()
+          .single()
+
+        if (error) {
+          console.error("[v0] Profile update error:", error)
+          throw error
+        }
+        result = data
+      } else {
+        // Create new profile
+        console.log("[v0] Creating new profile for user:", req.user.id)
+        const { data, error } = await supabaseAdmin
+          .from("profiles")
+          .insert([
+            {
+              user_id: req.user.id,
+              is_profile_complete: false,
+              is_visible: true,
+              verification_status: "unverified",
+              ...req.body,
+            },
+          ])
+          .select()
+          .single()
+
+        if (error) {
+          console.error("[v0] Profile creation error:", error)
+          throw error
+        }
+        result = data
+      }
+
+      console.log("[v0] Profile operation successful:", result.id)
+      res.json(result)
     } catch (error: any) {
-      res.status(500).json({ error: error.message })
+      console.error("[v0] Profile operation failed:", error)
+      res.status(500).json({
+        error: error.message || "Failed to save profile",
+        details: error.details || error.hint || "Unknown error",
+      })
     }
   })
 
@@ -610,3 +661,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app)
   return httpServer
 }
+
