@@ -1,21 +1,21 @@
-import { supabaseAdmin } from './supabase';
-import { randomUUID } from 'crypto';
+import { supabaseAdmin } from "./supabase"
+import { randomUUID } from "crypto"
 
 /**
  * Storage Bucket Names
  */
 export const STORAGE_BUCKETS = {
-  PROFILE_PHOTOS: 'profile-photos',
-  VERIFICATION_DOCUMENTS: 'verification-documents',
-} as const;
+  PROFILE_PHOTOS: "profile-photos",
+  VERIFICATION_DOCUMENTS: "verification-documents",
+} as const
 
 /**
  * File Upload Result
  */
 export interface FileUploadResult {
-  path: string;
-  url: string;
-  fullPath: string;
+  path: string
+  url: string
+  fullPath: string
 }
 
 /**
@@ -37,47 +37,43 @@ export class SupabaseStorage {
     userId: string,
     file: Buffer,
     fileName: string,
-    contentType: string
+    contentType: string,
   ): Promise<FileUploadResult> {
     // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const validTypes = ["image/jpeg", "image/png", "image/webp"]
     if (!validTypes.includes(contentType)) {
-      throw new Error(`Invalid file type. Allowed types: ${validTypes.join(', ')}`);
+      throw new Error(`Invalid file type. Allowed types: ${validTypes.join(", ")}`)
     }
 
     // Validate file size (10MB max)
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 10 * 1024 * 1024 // 10MB
     if (file.length > maxSize) {
-      throw new Error('File size exceeds 10MB limit');
+      throw new Error("File size exceeds 10MB limit")
     }
 
     // Generate unique file path: userId/uuid-filename
-    const fileExt = fileName.split('.').pop();
-    const uniqueFileName = `${randomUUID()}.${fileExt}`;
-    const filePath = `${userId}/${uniqueFileName}`;
+    const fileExt = fileName.split(".").pop()
+    const uniqueFileName = `${randomUUID()}.${fileExt}`
+    const filePath = `${userId}/${uniqueFileName}`
 
     // Upload to Supabase Storage
-    const { data, error } = await supabaseAdmin.storage
-      .from(STORAGE_BUCKETS.PROFILE_PHOTOS)
-      .upload(filePath, file, {
-        contentType,
-        upsert: false,
-      });
+    const { data, error } = await supabaseAdmin.storage.from(STORAGE_BUCKETS.PROFILE_PHOTOS).upload(filePath, file, {
+      contentType,
+      upsert: false,
+    })
 
     if (error) {
-      throw new Error(`Failed to upload profile photo: ${error.message}`);
+      throw new Error(`Failed to upload profile photo: ${error.message}`)
     }
 
     // Get public URL
-    const { data: urlData } = supabaseAdmin.storage
-      .from(STORAGE_BUCKETS.PROFILE_PHOTOS)
-      .getPublicUrl(data.path);
+    const { data: urlData } = supabaseAdmin.storage.from(STORAGE_BUCKETS.PROFILE_PHOTOS).getPublicUrl(data.path)
 
     return {
       path: data.path,
       url: urlData.publicUrl,
       fullPath: data.fullPath,
-    };
+    }
   }
 
   /**
@@ -86,11 +82,9 @@ export class SupabaseStorage {
    * @returns Public URL
    */
   getProfilePhotoUrl(path: string): string {
-    const { data } = supabaseAdmin.storage
-      .from(STORAGE_BUCKETS.PROFILE_PHOTOS)
-      .getPublicUrl(path);
+    const { data } = supabaseAdmin.storage.from(STORAGE_BUCKETS.PROFILE_PHOTOS).getPublicUrl(path)
 
-    return data.publicUrl;
+    return data.publicUrl
   }
 
   /**
@@ -98,12 +92,10 @@ export class SupabaseStorage {
    * @param path - Storage path
    */
   async deleteProfilePhoto(path: string): Promise<void> {
-    const { error } = await supabaseAdmin.storage
-      .from(STORAGE_BUCKETS.PROFILE_PHOTOS)
-      .remove([path]);
+    const { error } = await supabaseAdmin.storage.from(STORAGE_BUCKETS.PROFILE_PHOTOS).remove([path])
 
     if (error) {
-      throw new Error(`Failed to delete profile photo: ${error.message}`);
+      throw new Error(`Failed to delete profile photo: ${error.message}`)
     }
   }
 
@@ -113,15 +105,13 @@ export class SupabaseStorage {
    * @returns List of file paths
    */
   async listProfilePhotos(userId: string): Promise<string[]> {
-    const { data, error } = await supabaseAdmin.storage
-      .from(STORAGE_BUCKETS.PROFILE_PHOTOS)
-      .list(userId);
+    const { data, error } = await supabaseAdmin.storage.from(STORAGE_BUCKETS.PROFILE_PHOTOS).list(userId)
 
     if (error) {
-      throw new Error(`Failed to list profile photos: ${error.message}`);
+      throw new Error(`Failed to list profile photos: ${error.message}`)
     }
 
-    return data.map(file => `${userId}/${file.name}`);
+    return data.map((file) => `${userId}/${file.name}`)
   }
 
   // ==================== VERIFICATION DOCUMENTS ====================
@@ -138,24 +128,24 @@ export class SupabaseStorage {
     userId: string,
     file: Buffer,
     fileName: string,
-    contentType: string
+    contentType: string,
   ): Promise<FileUploadResult> {
     // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    const validTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"]
     if (!validTypes.includes(contentType)) {
-      throw new Error(`Invalid file type. Allowed types: ${validTypes.join(', ')}`);
+      throw new Error(`Invalid file type. Allowed types: ${validTypes.join(", ")}`)
     }
 
     // Validate file size (20MB max)
-    const maxSize = 20 * 1024 * 1024; // 20MB
+    const maxSize = 20 * 1024 * 1024 // 20MB
     if (file.length > maxSize) {
-      throw new Error('File size exceeds 20MB limit');
+      throw new Error("File size exceeds 20MB limit")
     }
 
     // Generate unique file path: userId/uuid-filename
-    const fileExt = fileName.split('.').pop();
-    const uniqueFileName = `${randomUUID()}.${fileExt}`;
-    const filePath = `${userId}/${uniqueFileName}`;
+    const fileExt = fileName.split(".").pop()
+    const uniqueFileName = `${randomUUID()}.${fileExt}`
+    const filePath = `${userId}/${uniqueFileName}`
 
     // Upload to Supabase Storage
     const { data, error } = await supabaseAdmin.storage
@@ -163,26 +153,26 @@ export class SupabaseStorage {
       .upload(filePath, file, {
         contentType,
         upsert: false,
-      });
+      })
 
     if (error) {
-      throw new Error(`Failed to upload verification document: ${error.message}`);
+      throw new Error(`Failed to upload verification document: ${error.message}`)
     }
 
     // For private bucket, we need to generate a signed URL
     const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin.storage
       .from(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS)
-      .createSignedUrl(data.path, 3600); // Valid for 1 hour
+      .createSignedUrl(data.path, 3600) // Valid for 1 hour
 
     if (signedUrlError) {
-      throw new Error(`Failed to create signed URL: ${signedUrlError.message}`);
+      throw new Error(`Failed to create signed URL: ${signedUrlError.message}`)
     }
 
     return {
       path: data.path,
       url: signedUrlData.signedUrl,
       fullPath: data.fullPath,
-    };
+    }
   }
 
   /**
@@ -191,16 +181,16 @@ export class SupabaseStorage {
    * @param expiresIn - Expiration time in seconds (default: 3600 = 1 hour)
    * @returns Signed URL
    */
-  async getVerificationDocumentUrl(path: string, expiresIn: number = 3600): Promise<string> {
+  async getVerificationDocumentUrl(path: string, expiresIn = 3600): Promise<string> {
     const { data, error } = await supabaseAdmin.storage
       .from(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS)
-      .createSignedUrl(path, expiresIn);
+      .createSignedUrl(path, expiresIn)
 
     if (error) {
-      throw new Error(`Failed to get verification document URL: ${error.message}`);
+      throw new Error(`Failed to get verification document URL: ${error.message}`)
     }
 
-    return data.signedUrl;
+    return data.signedUrl
   }
 
   /**
@@ -208,12 +198,10 @@ export class SupabaseStorage {
    * @param path - Storage path
    */
   async deleteVerificationDocument(path: string): Promise<void> {
-    const { error } = await supabaseAdmin.storage
-      .from(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS)
-      .remove([path]);
+    const { error } = await supabaseAdmin.storage.from(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS).remove([path])
 
     if (error) {
-      throw new Error(`Failed to delete verification document: ${error.message}`);
+      throw new Error(`Failed to delete verification document: ${error.message}`)
     }
   }
 
@@ -223,15 +211,13 @@ export class SupabaseStorage {
    * @returns List of file paths
    */
   async listVerificationDocuments(userId: string): Promise<string[]> {
-    const { data, error } = await supabaseAdmin.storage
-      .from(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS)
-      .list(userId);
+    const { data, error } = await supabaseAdmin.storage.from(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS).list(userId)
 
     if (error) {
-      throw new Error(`Failed to list verification documents: ${error.message}`);
+      throw new Error(`Failed to list verification documents: ${error.message}`)
     }
 
-    return data.map(file => `${userId}/${file.name}`);
+    return data.map((file) => `${userId}/${file.name}`)
   }
 
   // ==================== BATCH OPERATIONS ====================
@@ -242,12 +228,10 @@ export class SupabaseStorage {
    * @param paths - Array of file paths
    */
   async deleteMultipleFiles(bucket: string, paths: string[]): Promise<void> {
-    const { error } = await supabaseAdmin.storage
-      .from(bucket)
-      .remove(paths);
+    const { error } = await supabaseAdmin.storage.from(bucket).remove(paths)
 
     if (error) {
-      throw new Error(`Failed to delete files: ${error.message}`);
+      throw new Error(`Failed to delete files: ${error.message}`)
     }
   }
 
@@ -258,19 +242,19 @@ export class SupabaseStorage {
   async deleteAllUserFiles(userId: string): Promise<void> {
     try {
       // Delete profile photos
-      const profilePhotos = await this.listProfilePhotos(userId);
+      const profilePhotos = await this.listProfilePhotos(userId)
       if (profilePhotos.length > 0) {
-        await this.deleteMultipleFiles(STORAGE_BUCKETS.PROFILE_PHOTOS, profilePhotos);
+        await this.deleteMultipleFiles(STORAGE_BUCKETS.PROFILE_PHOTOS, profilePhotos)
       }
 
       // Delete verification documents
-      const verificationDocs = await this.listVerificationDocuments(userId);
+      const verificationDocs = await this.listVerificationDocuments(userId)
       if (verificationDocs.length > 0) {
-        await this.deleteMultipleFiles(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS, verificationDocs);
+        await this.deleteMultipleFiles(STORAGE_BUCKETS.VERIFICATION_DOCUMENTS, verificationDocs)
       }
     } catch (error) {
-      console.error('Error deleting user files:', error);
-      throw error;
+      console.error("Error deleting user files:", error)
+      throw error
     }
   }
 
@@ -284,15 +268,13 @@ export class SupabaseStorage {
    */
   async fileExists(bucket: string, path: string): Promise<boolean> {
     try {
-      const { data, error } = await supabaseAdmin.storage
-        .from(bucket)
-        .list(path.split('/')[0], {
-          search: path.split('/')[1],
-        });
+      const { data, error } = await supabaseAdmin.storage.from(bucket).list(path.split("/")[0], {
+        search: path.split("/")[1],
+      })
 
-      return !error && data && data.length > 0;
+      return !error && data && data.length > 0
     } catch {
-      return false;
+      return false
     }
   }
 
@@ -303,19 +285,59 @@ export class SupabaseStorage {
    * @returns File metadata
    */
   async getFileMetadata(bucket: string, path: string) {
-    const { data, error } = await supabaseAdmin.storage
-      .from(bucket)
-      .list(path.split('/')[0], {
-        search: path.split('/')[1],
-      });
+    const { data, error } = await supabaseAdmin.storage.from(bucket).list(path.split("/")[0], {
+      search: path.split("/")[1],
+    })
 
     if (error || !data || data.length === 0) {
-      throw new Error('File not found');
+      throw new Error("File not found")
     }
 
-    return data[0];
+    return data[0]
+  }
+
+  /**
+   * Ensure storage bucket exists and is properly configured
+   * @param bucketName - Name of the bucket to check/create
+   */
+  private async ensureBucketExists(bucketName: string): Promise<void> {
+    try {
+      // Check if bucket exists
+      const { data: buckets, error: listError } = await supabaseAdmin.storage.listBuckets()
+
+      if (listError) {
+        console.error("Error listing buckets:", listError)
+        throw new Error(`Failed to check storage buckets: ${listError.message}`)
+      }
+
+      const bucketExists = buckets?.some((bucket) => bucket.name === bucketName)
+
+      if (!bucketExists) {
+        console.log(`Bucket ${bucketName} does not exist, creating...`)
+
+        // Create the bucket
+        const { error: createError } = await supabaseAdmin.storage.createBucket(bucketName, {
+          public: bucketName === STORAGE_BUCKETS.PROFILE_PHOTOS, // Profile photos are public
+          fileSizeLimit: bucketName === STORAGE_BUCKETS.PROFILE_PHOTOS ? 10485760 : 20971520, // 10MB or 20MB
+          allowedMimeTypes:
+            bucketName === STORAGE_BUCKETS.PROFILE_PHOTOS
+              ? ["image/jpeg", "image/png", "image/webp"]
+              : ["image/jpeg", "image/png", "image/webp", "application/pdf"],
+        })
+
+        if (createError) {
+          console.error(`Error creating bucket ${bucketName}:`, createError)
+          throw new Error(`Failed to create storage bucket: ${createError.message}`)
+        }
+
+        console.log(`Successfully created bucket: ${bucketName}`)
+      }
+    } catch (error) {
+      console.error("Bucket initialization error:", error)
+      throw error
+    }
   }
 }
 
 // Export singleton instance
-export const storage = new SupabaseStorage();
+export const storage = new SupabaseStorage()
