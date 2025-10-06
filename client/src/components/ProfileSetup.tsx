@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useProfile } from '@/hooks/useProfile';
 import { Button } from '@/components/ui/button';
@@ -7,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 
-interface ProfileSetupProps {
+interface ProfileSetupEmergencyProps {
   onComplete: () => void;
 }
 
@@ -18,11 +19,12 @@ const INTERESTS = [
   'Nightlife', 'Beach'
 ];
 
-export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
+export default function ProfileSetupEmergency({ onComplete }: ProfileSetupEmergencyProps) {
   const { createProfile, uploadPhoto } = useProfile();
   const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [skipPhotos, setSkipPhotos] = useState(false);
 
   const [formData, setFormData] = useState({
     profile_type: 'single' as 'single' | 'couple',
@@ -37,8 +39,9 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
   });
 
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoUploadErrors, setPhotoUploadErrors] = useState<string[]>([]);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length + photoFiles.length > 6) {
       toast({
@@ -48,11 +51,43 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       });
       return;
     }
-    setPhotoFiles([...photoFiles, ...files]);
+
+    // Try to upload immediately to test storage
+    const uploadResults = [];
+    const errors = [];
+    
+    for (const file of files) {
+      const { url, error } = await uploadPhoto(file);
+      if (error) {
+        errors.push(`${file.name}: ${error}`);
+      } else if (url) {
+        uploadResults.push(url);
+      }
+    }
+
+    if (errors.length > 0) {
+      setPhotoUploadErrors(errors);
+      toast({
+        title: 'Photo Upload Issues',
+        description: `${errors.length} photo(s) failed to upload. You can skip photos for now and add them later.`,
+        variant: 'destructive',
+      });
+    } else {
+      setFormData(prev => ({ ...prev, photos: [...prev.photos, ...uploadResults] }));
+      setPhotoFiles([...photoFiles, ...files]);
+      toast({
+        title: 'Photos uploaded!',
+        description: `${uploadResults.length} photo(s) uploaded successfully`,
+      });
+    }
   };
 
   const removePhoto = (index: number) => {
     setPhotoFiles(photoFiles.filter((_, i) => i !== index));
+    setFormData(prev => ({
+      ...prev,
+      photos: prev.photos.filter((_, i) => i !== index)
+    }));
   };
 
   const toggleInterest = (interest: string) => {
@@ -80,26 +115,20 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // Upload photos first
-      const photoUrls: string[] = [];
-      for (const file of photoFiles) {
-        const { url, error } = await uploadPhoto(file);
-        if (error) throw new Error(error);
-        if (url) photoUrls.push(url);
-      }
-
-      // Create profile
+      // Create profile with or without photos
       const { error } = await createProfile({
         ...formData,
         age: parseInt(formData.age),
-        photos: photoUrls,
+        photos: formData.photos, // May be empty if photos failed
       });
 
       if (error) throw new Error(error);
 
       toast({
         title: 'Profile created!',
-        description: 'Welcome to SPICE',
+        description: skipPhotos || formData.photos.length === 0 
+          ? 'Profile created successfully! You can add photos later from your profile settings.'
+          : 'Welcome to SPICE',
       });
 
       onComplete();
@@ -117,7 +146,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
   const canProceedStep1 = formData.name && formData.age && parseInt(formData.age) >= 18;
   const canProceedStep2 = formData.bio && formData.location;
   const canProceedStep3 = formData.interests.length >= 3;
-  const canSubmit = photoFiles.length >= 2;
+  const canSubmit = skipPhotos || formData.photos.length >= 1; // Allow completion with 1 photo or skip
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -318,17 +347,30 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
             </div>
           )}
 
-          {/* Step 4: Photos */}
+          {/* Step 4: Photos (Optional) */}
           {step === 4 && (
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-white mb-4">Add Photos</h2>
-              <p className="text-white/80 text-sm">Upload at least 2 photos (max 6)</p>
+              <h2 className="text-2xl font-bold text-white mb-4">Add Photos (Optional)</h2>
+              <p className="text-white/80 text-sm">
+                Upload photos to make your profile stand out, or skip for now and add them later
+              </p>
+
+              {photoUploadErrors.length > 0 && (
+                <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4">
+                  <h3 className="text-red-400 font-medium mb-2">Photo Upload Issues:</h3>
+                  <ul className="text-red-300 text-sm space-y-1">
+                    {photoUploadErrors.map((error, index) => (
+                      <li key={index}>\u2022 {error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-4">
-                {photoFiles.map((file, index) => (
+                {formData.photos.map((url, index) => (
                   <div key={index} className="relative aspect-square">
                     <img
-                      src={URL.createObjectURL(file)}
+                      src={url}
                       alt={`Upload ${index + 1}`}
                       className="w-full h-full object-cover rounded-lg"
                     />
@@ -336,11 +378,11 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
                       onClick={() => removePhoto(index)}
                       className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
                     >
-                      ×
+                      \u00d7
                     </button>
                   </div>
                 ))}
-                {photoFiles.length < 6 && (
+                {formData.photos.length < 6 && (
                   <label className="aspect-square border-2 border-dashed border-white/20 rounded-lg flex items-center justify-center cursor-pointer hover:border-pink-500 transition-colors">
                     <input
                       type="file"
@@ -352,6 +394,19 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
                     <span className="text-white/60 text-4xl">+</span>
                   </label>
                 )}
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="skipPhotos"
+                  checked={skipPhotos}
+                  onChange={(e) => setSkipPhotos(e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="skipPhotos" className="text-white/80 text-sm">
+                  Skip photos for now (you can add them later from your profile)
+                </Label>
               </div>
 
               <div className="flex gap-4">
