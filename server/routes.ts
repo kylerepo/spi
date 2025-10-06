@@ -403,6 +403,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Upload profile photo
   app.post('/api/upload/profile-photo', authenticateUser, upload.single('photo'), async (req, res) => {
     try {
+      if (!supabaseAdmin) {
+        return res.status(503).json({ 
+          error: 'File upload service is not configured. Please contact administrator.' 
+        });
+      }
+
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
       }
