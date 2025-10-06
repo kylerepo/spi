@@ -346,3 +346,19 @@ export const createSafeSexSchema = z.object({
   last_test_date: z.string().optional(),
   custom_practices: z.string().optional(),
 });
+
+// ==================== COMMUNITY POST (for IsoPage) ====================
+
+export interface InsertCommunityPost {
+  title: string;
+  content: string;
+  category: string;
+  isAnonymous: boolean;
+}
+
+export const insertCommunityPostSchema = z.object({
+  title: z.string().min(1).max(200),
+  content: z.string().min(1).max(2000),
+  category: z.string().min(1),
+  isAnonymous: z.boolean(),
+});
