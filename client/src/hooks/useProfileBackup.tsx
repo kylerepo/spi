@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase, Profile } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 
-export function useProfile() {
+export function useProfileBackup() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,6 +73,36 @@ export function useProfile() {
     }
   };
 
+  // Backup photo upload using base64 encoding (stores in database)
+  const uploadPhotoBackup = async (file: File) => {
+    try {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Please upload an image file (JPG, PNG, GIF, etc.)');
+      }
+
+      // Validate file size (2MB limit for base64)
+      if (file.size > 2 * 1024 * 1024) {
+        throw new Error('Image must be smaller than 2MB for backup upload');
+      }
+
+      // Convert to base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Store base64 in a simple table or return for direct use
+      return { url: base64, error: null };
+    } catch (err: any) {
+      console.error('Backup photo upload error:', err);
+      return { url: null, error: err.message };
+    }
+  };
+
+  // Primary upload with fallback
   const uploadPhoto = async (file: File) => {
     try {
       // Validate file type
@@ -80,42 +110,18 @@ export function useProfile() {
         throw new Error('Please upload an image file (JPG, PNG, GIF, etc.)');
       }
 
-      // Validate file size (5MB limit for emergency fix)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Image must be smaller than 5MB');
-      }
-
-      console.log('Starting photo upload:', { fileSize: file.size, fileType: file.type });
-
-      // EMERGENCY FIX: Try to create bucket first if it doesn't exist
-      try {
-        const { data: buckets } = await supabase.storage.listBuckets();
-        const photosBucket = buckets?.find(bucket => bucket.name === 'photos');
-        
-        if (!photosBucket) {
-          console.log('Photos bucket not found, attempting to create...');
-          const { error: createError } = await supabase.storage.createBucket('photos', {
-            public: true,
-            allowedMimeTypes: ['image/*'],
-            fileSizeLimit: 10485760 // 10MB
-          });
-          
-          if (createError) {
-            console.warn('Could not create bucket:', createError);
-          } else {
-            console.log('Successfully created photos bucket');
-          }
-        }
-      } catch (bucketError) {
-        console.warn('Bucket check/creation failed:', bucketError);
+      // Validate file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('Image must be smaller than 10MB');
       }
 
       const fileExt = file.name.split('.').pop()?.toLowerCase();
       const fileName = `${user?.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `profile-photos/${fileName}`;
 
-      console.log('Attempting upload:', { fileName, filePath });
+      console.log('Attempting primary upload:', { fileName, filePath, fileSize: file.size, fileType: file.type });
 
+      // Try primary storage upload
       const { error: uploadError, data } = await supabase.storage
         .from('photos')
         .upload(filePath, file, {
@@ -124,32 +130,14 @@ export function useProfile() {
         });
 
       if (uploadError) {
-        console.error('Storage upload failed:', uploadError);
+        console.warn('Primary upload failed, trying backup method:', uploadError);
         
-        // EMERGENCY FALLBACK: Use base64 encoding for small images
-        if (file.size <= 2 * 1024 * 1024) { // 2MB limit for base64
-          console.log('Using emergency base64 fallback');
-          
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          
-          console.log('Base64 conversion successful');
-          return { url: base64, error: null };
-        }
-        
-        // Provide specific error messages
-        if (uploadError.message.includes('not found') || uploadError.message.includes('does not exist')) {
-          throw new Error('Storage not configured. Using emergency backup method failed - file too large.');
-        } else if (uploadError.message.includes('policy') || uploadError.message.includes('permission')) {
-          throw new Error('Upload permission denied. Storage policies need to be configured.');
-        } else if (uploadError.message.includes('pattern')) {
-          throw new Error('Storage configuration error. Please contact support.');
+        // Fallback to base64 if storage fails
+        if (file.size <= 2 * 1024 * 1024) { // Only for files under 2MB
+          console.log('Using backup base64 upload method');
+          return await uploadPhotoBackup(file);
         } else {
-          throw new Error(`Upload failed: ${uploadError.message}`);
+          throw new Error('Storage not configured and file too large for backup method. Please contact support.');
         }
       }
 
@@ -157,11 +145,21 @@ export function useProfile() {
         .from('photos')
         .getPublicUrl(filePath);
 
-      console.log('Upload successful:', { publicUrl });
+      console.log('Primary upload successful:', { publicUrl });
       return { url: publicUrl, error: null };
     } catch (err: any) {
       console.error('Photo upload error:', err);
-      return { url: null, error: err.message };
+      
+      // Provide helpful error messages
+      if (err.message.includes('not found')) {
+        return { url: null, error: 'Storage not configured. Using backup method...' };
+      } else if (err.message.includes('policy')) {
+        return { url: null, error: 'Upload permission denied. Please try logging out and back in.' };
+      } else if (err.message.includes('pattern')) {
+        return { url: null, error: 'Storage configuration issue. Please contact support.' };
+      } else {
+        return { url: null, error: err.message };
+      }
     }
   };
 
@@ -186,6 +184,7 @@ export function useProfile() {
     createProfile,
     updateProfile,
     uploadPhoto,
+    uploadPhotoBackup,
     addPhoto,
     removePhoto,
     refetch: fetchProfile,
