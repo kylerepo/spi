@@ -1,6 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { supabaseAdmin, supabase } from "./supabase";
+import { db } from "./db";
+import { storage } from "./storage";
+import multer from "multer";
 
 // Middleware to verify Supabase JWT
 async function authenticateUser(req: Request, res: Response, next: Function) {
