@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useEffect } from "react";
 import Layout from "@/components/Layout";
+import { supabase } from "@/lib/supabase";
 
 // Import pages
 import HeroSection from "@/components/HeroSection";
@@ -113,10 +114,56 @@ function AuthWrapper({ type }: { type: 'login' | 'signup' }) {
   const [, setLocation] = useLocation();
 
   const handleLogin = async (email: string, password: string) => {
-    const { error } = await signIn(email, password);
-    if (error) {
-      console.error('Login error:', error);
-      alert(error.message || 'Failed to login');
+    try {
+      const { data, error } = await signIn(email, password);
+      
+      if (error) {
+        console.error('Login error:', error);
+        alert(error.message || 'Failed to login');
+        return;
+      }
+      
+      console.log('Login successful!', data);
+      
+      // Check if user has a profile
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        alert('Login failed - no user found');
+        return;
+      }
+      
+      console.log('User data:', user);
+      console.log('Email verified:', user.email_confirmed_at);
+      
+      // Check for existing profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      
+      console.log('Profile check result:', { profile, profileError });
+      
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error('Profile check error:', profileError);
+        alert('Error checking profile');
+        return;
+      }
+      
+      if (profile) {
+        console.log('Profile found, redirecting to browse');
+        alert('Welcome back! Redirecting to browse...');
+        setLocation("/browse");
+      } else {
+        console.log('No profile found, redirecting to profile setup');
+        alert('Welcome! Please complete your profile...');
+        setLocation("/profile-setup");
+      }
+      
+    } catch (error) {
+      console.error('Login exception:', error);
+      alert('An error occurred during login');
     }
   };
 
