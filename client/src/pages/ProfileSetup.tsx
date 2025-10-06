@@ -174,66 +174,28 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       return
     }
 
-    // For new signups, we'll use a temporary ID that will be replaced during final submission
-    const tempUserId = user?.id || 'temp-' + Date.now()
-    console.log(`Uploading ${files.length} files for user:`, tempUserId)
+    console.log(`Uploading ${files.length} files`)
     setLoading(true)
     setError('')
     
     try {
-      const uploadPromises = Array.from(files).slice(0, 5 - uploadedPhotos.length).map(async (file, index) => {
-        // Validate file type and size
-        if (!file.type.startsWith('image/')) {
-          throw new Error(`File ${file.name} is not an image`)
-        }
-        if (file.size > 10 * 1024 * 1024) { // 10MB limit
-          throw new Error(`File ${file.name} is too large (max 10MB)`)
-        }
-        
-        console.log(`Uploading file ${index + 1}:`, file.name, file.size)
-        
-        // Get upload URL from backend using proper authentication
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          throw new Error('Not authenticated')
-        }
-
-        const uploadUrlResponse = await fetch('/api/objects/upload', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          }
+      const { uploadProfilePhoto } = await import('@/lib/upload');
+      
+      const uploadPromises = Array.from(files)
+        .slice(0, 5 - uploadedPhotos.length)
+        .map(async (file, index) => {
+          console.log(`Uploading file ${index + 1}:`, file.name, file.size)
+          
+          // Upload using the proper API endpoint
+          const result = await uploadProfilePhoto(
+            file,
+            uploadedPhotos.length === 0 && index === 0, // First photo is profile pic
+            uploadedPhotos.length + index
+          );
+          
+          console.log(`File ${index + 1} uploaded successfully:`, result.url)
+          return { url: result.url, path: result.path, id: result.id }
         })
-        
-        if (!uploadUrlResponse.ok) {
-          const errorText = await uploadUrlResponse.text()
-          throw new Error(`Failed to get upload URL: ${errorText}`)
-        }
-        
-        const { uploadURL } = await uploadUrlResponse.json()
-        
-        // Upload file to signed URL
-        const uploadResponse = await fetch(uploadURL, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': file.type,
-          },
-          body: file
-        })
-        
-        if (!uploadResponse.ok) {
-          const errorText = await uploadResponse.text()
-          throw new Error(`Failed to upload file to storage: ${errorText}`)
-        }
-        
-        // Extract object path from upload URL for storage
-        const objectPath = new URL(uploadURL).pathname.split('/').pop()
-        const photoUrl = `/objects/${objectPath}`
-        
-        console.log(`File ${index + 1} uploaded successfully:`, photoUrl)
-        return { url: photoUrl, path: objectPath }
-      })
 
       const newPhotos = await Promise.all(uploadPromises)
       console.log('All photos uploaded:', newPhotos)
@@ -252,12 +214,12 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       let errorMessage = 'Failed to upload photos. Please try again.'
       
       const errorMsg = error instanceof Error ? error.message : String(error);
-      if (errorMsg.includes('file_size_limit')) {
+      if (errorMsg.includes('size')) {
         errorMessage = 'File too large. Please choose images under 10MB.'
-      } else if (errorMsg.includes('Invalid file type')) {
+      } else if (errorMsg.includes('image')) {
         errorMessage = 'Please select valid image files (JPG, PNG, WebP).'
-      } else if (errorMsg.includes('Missing Supabase')) {
-        errorMessage = 'Photo storage is not configured. Please try again later.'
+      } else if (errorMsg.includes('logged in')) {
+        errorMessage = 'Please sign in to upload photos.'
       } else if (errorMsg) {
         errorMessage = errorMsg
       }
