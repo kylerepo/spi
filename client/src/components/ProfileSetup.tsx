@@ -367,6 +367,174 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
     return isValid
   }
 
+  const saveCurrentStepData = async () => {
+    const data = form.getValues()
+
+    if (!user) {
+      throw new Error("User not authenticated")
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      throw new Error("No valid session found")
+    }
+
+    // Save different data based on current step
+    if (currentStep >= 2 && currentStep <= 4) {
+      // Steps 2-4: Basic profile data
+      await fetch("/api/profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          display_name: data.displayName,
+          bio: data.bio,
+          account_type: data.accountType,
+          profile_type: data.profileType,
+          gender: data.gender,
+          sexuality: data.sexuality,
+          age: data.age,
+          city: data.city,
+          state: data.state,
+          country: data.country,
+          relationship_status: data.relationshipStatus,
+          headline: data.headline,
+        }),
+      })
+    }
+
+    if (currentStep === 5 && isCoupleAccount) {
+      // Step 5: Couple profile data
+      await fetch("/api/profile/couple", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          partner1_name: data.partner1Name,
+          partner1_gender: data.partner1Gender,
+          partner1_sexuality: data.partner1Sexuality,
+          partner1_bio: data.partner1Bio,
+          partner2_name: data.partner2Name,
+          partner2_gender: data.partner2Gender,
+          partner2_sexuality: data.partner2Sexuality,
+          partner2_bio: data.partner2Bio,
+        }),
+      })
+    }
+
+    if (currentStep === 6) {
+      // Step 6: Preferences
+      await fetch("/api/profile/preferences", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          seeking_genders: data.seekingGenders,
+          seeking_account_types: data.seekingAccountTypes,
+          age_range_min: data.ageRangeMin,
+          age_range_max: data.ageRangeMax,
+        }),
+      })
+    }
+
+    if (currentStep === 7) {
+      // Step 7: Interests
+      if (data.interests?.length) {
+        await fetch("/api/profile/interests", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            interests: data.interests,
+            custom_interests: data.customInterests,
+          }),
+        })
+      }
+    }
+
+    if (currentStep === 9) {
+      // Step 9: Boundaries
+      if (data.boundaries?.length) {
+        await fetch("/api/profile/boundaries", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            boundaries: data.boundaries,
+            custom_boundaries: data.customBoundaries,
+          }),
+        })
+      }
+    }
+
+    if (currentStep === 10) {
+      // Step 10: Safe sex practices
+      if (data.safeSexPractices?.length) {
+        await fetch("/api/profile/safe-sex", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            practices: data.safeSexPractices,
+            custom_practices: data.customSafeSexPractices,
+          }),
+        })
+      }
+    }
+  }
+
+  const nextStep = async () => {
+    if (!validateCurrentStep()) {
+      return
+    }
+
+    // Save current step data before moving to next step
+    try {
+      setLoading(true)
+      await saveCurrentStepData()
+
+      if (currentStep === 4 && !isCoupleAccount) {
+        setCurrentStep(6) // Skip partner info for singles
+      } else if (currentStep < maxSteps) {
+        setCurrentStep(currentStep + 1)
+      }
+    } catch (error: any) {
+      console.error("[v0] Error saving step data:", error)
+      setError(`Failed to save: ${error.message}`)
+      toast({
+        title: "Save Failed",
+        description: error.message || "Failed to save your information. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const prevStep = () => {
+    if (currentStep > 1) {
+      if (currentStep === 6 && !isCoupleAccount) {
+        setCurrentStep(currentStep - 2) // Skip partner info for singles when going back
+      } else {
+        setCurrentStep(currentStep - 1)
+      }
+    }
+  }
+
   // Handle profile completion when "Complete Profile" button is clicked
   const handleCompleteProfile = async () => {
     try {
@@ -382,13 +550,14 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
         throw new Error("User not authenticated")
       }
 
-      // Get current session token
       const {
         data: { session },
       } = await supabase.auth.getSession()
       if (!session?.access_token) {
         throw new Error("No valid session found")
       }
+
+      await saveCurrentStepData()
 
       console.log("[v0] Marking profile as complete...")
 
@@ -401,6 +570,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
         },
         body: JSON.stringify({
           is_profile_complete: true,
+          is_visible: true,
         }),
       })
 
@@ -419,7 +589,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       // Show success toast
       toast({
         title: "Profile Complete! 🎉",
-        description: "Welcome to SPICE! Your profile has been created successfully. Redirecting to Community...",
+        description: "Welcome to SPICE! Your profile has been created successfully.",
         duration: 5000,
       })
 
@@ -439,26 +609,6 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       })
     } finally {
       setLoading(false)
-    }
-  }
-
-  const nextStep = () => {
-    if (!validateCurrentStep()) {
-      return
-    }
-
-    if (currentStep === 4 && !isCoupleAccount) {
-      setCurrentStep(6) // Skip partner info for singles
-    } else if (currentStep < maxSteps) {
-      setCurrentStep(currentStep + 1)
-    }
-  }
-
-  const prevStep = () => {
-    if (currentStep === 6 && !isCoupleAccount) {
-      setCurrentStep(4) // Skip back over partner info for singles
-    } else if (currentStep > 1) {
-      setCurrentStep(currentStep - 1)
     }
   }
 
