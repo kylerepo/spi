@@ -362,3 +362,37 @@ export const insertCommunityPostSchema = z.object({
   category: z.string().min(1),
   isAnonymous: z.boolean(),
 });
+
+// ==================== MATCHES & MESSAGING (for frontend compatibility) ====================
+
+export interface Match {
+  id: string;
+  user1_id: string;
+  user2_id: string;
+  matched_at: string;
+  created_at: string;
+}
+
+export interface ProfileLike {
+  id: string;
+  liker_id: string;
+  liked_id: string;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  match_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  type: 'text' | 'image' | 'emoji';
+  is_read: boolean;
+  created_at: string;
+}
