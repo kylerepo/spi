@@ -395,6 +395,162 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== STORAGE ROUTES (FILE UPLOADS) ====================
+  
+  // Configure multer for memory storage
+  const upload = multer({ storage: multer.memoryStorage() });
+
+  // Upload profile photo
+  app.post('/api/upload/profile-photo', authenticateUser, upload.single('photo'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      // Get user's profile
+      const profile = await db.getProfileByUserId(req.user.id);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Upload to storage
+      const uploadResult = await storage.uploadProfilePhoto(
+        req.user.id,
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype
+      );
+
+      // Save to database
+      const photoRecord = await db.createProfilePhoto({
+        profile_id: profile.id,
+        url: uploadResult.url,
+        storage_path: uploadResult.path,
+        is_profile: req.body.is_profile === 'true',
+        order: parseInt(req.body.order || '0'),
+        is_verified: false,
+      });
+
+      res.json({
+        success: true,
+        photo: photoRecord,
+        message: 'Profile photo uploaded successfully'
+      });
+    } catch (error: any) {
+      console.error('Profile photo upload error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get profile photos
+  app.get('/api/profile-photos', authenticateUser, async (req, res) => {
+    try {
+      const profile = await db.getProfileByUserId(req.user.id);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      const photos = await db.getProfilePhotos(profile.id);
+      res.json(photos);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete profile photo
+  app.delete('/api/profile-photos/:photoId', authenticateUser, async (req, res) => {
+    try {
+      const { photoId } = req.params;
+      
+      // Get photo details
+      const photo = await db.getProfilePhoto(photoId);
+      
+      // Verify ownership
+      const profile = await db.getProfileByUserId(req.user.id);
+      if (!profile || photo.profile_id !== profile.id) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      // Delete from storage
+      if (photo.storage_path) {
+        await storage.deleteProfilePhoto(photo.storage_path);
+      }
+
+      // Delete from database
+      await db.deleteProfilePhoto(photoId);
+
+      res.json({ success: true, message: 'Photo deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Upload verification document
+  app.post('/api/upload/verification', authenticateUser, upload.single('document'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const { verification_type } = req.body;
+      if (!verification_type) {
+        return res.status(400).json({ error: 'Verification type is required' });
+      }
+
+      // Upload to storage
+      const uploadResult = await storage.uploadVerificationDocument(
+        req.user.id,
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype
+      );
+
+      // Save to database
+      const verification = await db.createUserVerification({
+        user_id: req.user.id,
+        verification_type,
+        file_url: uploadResult.url,
+        storage_path: uploadResult.path,
+        status: 'pending',
+      });
+
+      res.json({
+        success: true,
+        verification,
+        message: 'Verification document uploaded successfully'
+      });
+    } catch (error: any) {
+      console.error('Verification upload error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get user verifications
+  app.get('/api/verifications', authenticateUser, async (req, res) => {
+    try {
+      const verifications = await db.getUserVerifications(req.user.id);
+      
+      // Generate fresh signed URLs for documents
+      const verificationsWithUrls = await Promise.all(
+        verifications.map(async (v) => {
+          if (v.storage_path) {
+            try {
+              const url = await storage.getVerificationDocumentUrl(v.storage_path);
+              return { ...v, file_url: url };
+            } catch {
+              return v;
+            }
+          }
+          return v;
+        })
+      );
+
+      res.json(verificationsWithUrls);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
