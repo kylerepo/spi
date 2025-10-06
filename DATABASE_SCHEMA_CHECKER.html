@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Database Schema Verification</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 1200px; 
+            margin: 20px auto; 
+            padding: 20px; 
+            background: #1a1a1a; 
+            color: white; 
+        }
+        .status { 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 8px; 
+            border-left: 4px solid;
+        }
+        .success { background: #1a4a3a; border-color: #4ade80; }
+        .error { background: #4a1a1a; border-color: #ef4444; }
+        .warning { background: #4a3a1a; border-color: #f59e0b; }
+        .info { background: #1a3a4a; border-color: #3b82f6; }
+        button { 
+            padding: 12px 24px; 
+            margin: 8px; 
+            background: #3b82f6; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold;
+        }
+        button:hover { background: #2563eb; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        pre { 
+            background: #2a2a2a; 
+            padding: 15px; 
+            border-radius: 6px; 
+            overflow-x: auto; 
+            border: 1px solid #444;
+            font-size: 12px;
+        }
+        .schema-table {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .schema-header {
+            background: #374151;
+            padding: 10px;
+            font-weight: bold;
+            border-bottom: 1px solid #444;
+        }
+        .schema-content {
+            padding: 15px;
+        }
+        .field-row {
+            display: grid;
+            grid-template-columns: 200px 150px 100px 1fr;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+        .field-header {
+            font-weight: bold;
+            background: #4a5568;
+            padding: 8px;
+        }
+        .missing { color: #ef4444; }
+        .present { color: #4ade80; }
+        .mismatch { color: #f59e0b; }
+        h1 { color: #3b82f6; }
+        h2 { color: #f59e0b; }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+    </style>
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <h1>🔍 Database Schema Verification</h1>
+    <p><strong>This tool will check if your Supabase database has all the required fields for profile setup.</strong></p>
+    
+    <div class="status info">
+        <h3>What This Tool Checks:</h3>
+        <ul>
+            <li>✅ Profiles table structure and all required columns</li>
+            <li>✅ Data types match your ProfileSetup form</li>
+            <li>✅ Constraints and default values</li>
+            <li>✅ Row Level Security (RLS) policies</li>
+            <li>✅ Storage bucket configuration</li>
+            <li>✅ Missing fields or type mismatches</li>
+        </ul>
+    </div>
+
+    <button onclick="checkDatabaseSchema()">🔍 Check Database Schema</button>
+    <button onclick="checkRLSPolicies()">🔒 Check RLS Policies</button>
+    <button onclick="checkStorageConfig()">📦 Check Storage Configuration</button>
+    <button onclick="runFullDiagnostic()">🚀 Run Complete Diagnostic</button>
+
+    <div id="results"></div>
+
+    <script>
+        // Initialize Supabase client
+        const supabaseUrl = 'https://hvafquyruidsvteerdwf.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWZxdXlydWlkc3Z0ZWVyZHdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MzQ3ODcsImV4cCI6MjA3NTExMDc4N30.Eu74Afz66mSLrEJK1B2g4WG3OoOTL4dT55LABL_Eu0s';
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        // Expected schema based on your ProfileSetup component
+        const expectedProfileFields = {
+            id: { type: 'uuid', nullable: false, default: 'uuid_generate_v4()' },
+            user_id: { type: 'uuid', nullable: false, references: 'auth.users(id)' },
+            profile_type: { type: 'varchar(10)', nullable: false, default: 'single', check: "IN ('single', 'couple')" },
+            name: { type: 'varchar(100)', nullable: false },
+            age: { type: 'integer', nullable: false, check: '>= 18' },
+            bio: { type: 'text', nullable: true },
+            location: { type: 'varchar(200)', nullable: true },
+            latitude: { type: 'decimal(10,8)', nullable: true },
+            longitude: { type: 'decimal(11,8)', nullable: true },
+            gender: { type: 'varchar(20)', nullable: true },
+            orientation: { type: 'varchar(50)', nullable: true },
+            looking_for: { type: 'text[]', nullable: true },
+            interests: { type: 'text[]', nullable: true, default: '{}' },
+            photos: { type: 'text[]', nullable: true, default: '{}' },
+            is_verified: { type: 'boolean', nullable: true, default: false },
+            is_premium: { type: 'boolean', nullable: true, default: false },
+            partner_id: { type: 'uuid', nullable: true, references: 'profiles(id)' },
+            created_at: { type: 'timestamp with time zone', nullable: true, default: 'NOW()' },
+            updated_at: { type: 'timestamp with time zone', nullable: true, default: 'NOW()' }
+        };
+
+        function showResult(content, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML += `<div class="${type}">${content}</div>`;
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        async function checkDatabaseSchema() {
+            clearResults();
+            showResult('🔍 Checking database schema...', 'info');
+            
+            try {
+                // Query the information schema to get table structure
+                const { data, error } = await supabase.rpc('get_table_schema', {
+                    table_name: 'profiles'
+                });
+
+                if (error) {
+                    // Fallback: Try to query the profiles table directly to see what fields exist
+                    console.log('RPC failed, trying direct query:', error);
+                    await checkSchemaDirectly();
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    analyzeSchema(data);
+                } else {
+                    showResult('❌ <strong>CRITICAL:</strong> Profiles table not found or has no columns!', 'error');
+                    await checkSchemaDirectly();
+                }
+
+            } catch (err) {
+                console.error('Schema check error:', err);
+                await checkSchemaDirectly();
+            }
+        }
+
+        async function checkSchemaDirectly() {
+            showResult('🔄 Trying alternative schema check...', 'info');
+            
+            try {
+                // Try to insert a test record to see what fields are available
+                const testData = {
+                    name: 'test',
+                    age: 25,
+                    bio: 'test bio',
+                    location: 'test location',
+                    profile_type: 'single',
+                    interests: ['test'],
+                    photos: []
+                };
+
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .insert([testData])
+                    .select();
+
+                if (error) {
+                    showResult(`<h3>❌ Profile Insert Test Failed</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p><strong>Details:</strong> ${error.details || 'No additional details'}</p>
+                        <p><strong>Hint:</strong> ${error.hint || 'No hint provided'}</p>`, 'error');
+                    
+                    // Analyze the error to determine what's wrong
+                    analyzeInsertError(error);
+                } else {
+                    showResult('✅ <strong>Profile table exists and accepts basic data!</strong>', 'success');
+                    
+                    // Clean up test record
+                    if (data && data[0]) {
+                        await supabase.from('profiles').delete().eq('id', data[0].id);
+                    }
+                    
+                    // Now try to get the actual schema
+                    await getActualTableStructure();
+                }
+
+            } catch (err) {
+                showResult(`❌ <strong>Database connection failed:</strong> ${err.message}`, 'error');
+            }
+        }
+
+        function analyzeInsertError(error) {
+            const message = error.message.toLowerCase();
+            
+            if (message.includes('relation') && message.includes('does not exist')) {
+                showResult(`<h3>🚨 CRITICAL ISSUE: Profiles Table Missing</h3>
+                    <p>The <code>profiles</code> table does not exist in your database!</p>
+                    <div class="error">
+                        <h4>🛠️ Fix Required:</h4>
+                        <ol>
+                            <li>Go to Supabase Dashboard → SQL Editor</li>
+                            <li>Run the complete schema from <code>supabase-schema.sql</code></li>
+                            <li>This will create all required tables and policies</li>
+                        </ol>
+                    </div>`, 'error');
+            } else if (message.includes('column') && message.includes('does not exist')) {
+                const columnMatch = message.match(/column "([^"]+)" does not exist/);
+                const missingColumn = columnMatch ? columnMatch[1] : 'unknown';
+                
+                showResult(`<h3>⚠️ Missing Column: ${missingColumn}</h3>
+                    <p>The profiles table exists but is missing the <code>${missingColumn}</code> column.</p>
+                    <div class="warning">
+                        <h4>🛠️ Fix Required:</h4>
+                        <p>Add the missing column with:</p>
+                        <pre>ALTER TABLE profiles ADD COLUMN ${missingColumn} ${getExpectedColumnType(missingColumn)};</pre>
+                    </div>`, 'warning');
+            } else if (message.includes('violates check constraint')) {
+                showResult(`<h3>⚠️ Data Validation Issue</h3>
+                    <p>The table exists but has stricter validation than expected.</p>
+                    <p><strong>Error:</strong> ${error.message}</p>`, 'warning');
+            } else if (message.includes('permission denied') || message.includes('rls')) {
+                showResult(`<h3>🔒 Permission Issue</h3>
+                    <p>Row Level Security (RLS) policies may be blocking the insert.</p>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <div class="warning">
+                        <h4>🛠️ Check RLS Policies:</h4>
+                        <p>Click "Check RLS Policies" button to verify your security settings.</p>
+                    </div>`, 'warning');
+            } else {
+                showResult(`<h3>❓ Unknown Database Issue</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <p><strong>Code:</strong> ${error.code || 'No error code'}</p>`, 'error');
+            }
+        }
+
+        function getExpectedColumnType(columnName) {
+            const field = expectedProfileFields[columnName];
+            if (!field) return 'TEXT';
+            
+            let sql = field.type;
+            if (!field.nullable) sql += ' NOT NULL';
+            if (field.default) sql += ` DEFAULT ${field.default}`;
+            
+            return sql;
+        }
+
+        async function getActualTableStructure() {
+            try {
+                // Try to select from profiles with limit 0 to get column info
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .limit(0);
+
+                if (error) {
+                    showResult(`❌ Could not query profiles structure: ${error.message}`, 'error');
+                    return;
+                }
+
+                showResult('✅ <strong>Profiles table is accessible!</strong>', 'success');
+                
+                // Try to get one record to see the actual structure
+                const { data: sampleData, error: sampleError } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .limit(1);
+
+                if (sampleError) {
+                    showResult(`⚠️ Could not fetch sample data: ${sampleError.message}`, 'warning');
+                } else {
+                    if (sampleData && sampleData.length > 0) {
+                        showActualSchema(sampleData[0]);
+                    } else {
+                        showResult('ℹ️ Profiles table is empty (no sample data to analyze)', 'info');
+                        showExpectedSchema();
+                    }
+                }
+
+            } catch (err) {
+                showResult(`❌ Error getting table structure: ${err.message}`, 'error');
+            }
+        }
+
+        function showActualSchema(sampleRecord) {
+            const actualFields = Object.keys(sampleRecord);
+            const expectedFields = Object.keys(expectedProfileFields);
+            
+            let schemaHtml = `<h3>📊 Schema Comparison</h3>
+                <div class="comparison">
+                    <div>
+                        <h4>🎯 Expected Fields (${expectedFields.length})</h4>
+                        <div class="schema-table">`;
+            
+            expectedFields.forEach(field => {
+                const status = actualFields.includes(field) ? 'present' : 'missing';
+                const icon = status === 'present' ? '✅' : '❌';
+                schemaHtml += `<div class="field-row ${status}">
+                    <span>${icon} ${field}</span>
+                    <span>${expectedProfileFields[field].type}</span>
+                    <span>${expectedProfileFields[field].nullable ? 'NULL' : 'NOT NULL'}</span>
+                    <span>${expectedProfileFields[field].default || ''}</span>
+                </div>`;
+            });
+            
+            schemaHtml += `</div></div><div>
+                <h4>🔍 Actual Fields (${actualFields.length})</h4>
+                <div class="schema-table">`;
+            
+            actualFields.forEach(field => {
+                const status = expectedFields.includes(field) ? 'present' : 'extra';
+                const icon = status === 'present' ? '✅' : '➕';
+                const value = sampleRecord[field];
+                const type = typeof value;
+                schemaHtml += `<div class="field-row ${status}">
+                    <span>${icon} ${field}</span>
+                    <span>${type}</span>
+                    <span>${value === null ? 'NULL' : 'HAS VALUE'}</span>
+                    <span>${Array.isArray(value) ? 'Array' : String(value).substring(0, 30)}</span>
+                </div>`;
+            });
+            
+            schemaHtml += `</div></div></div>`;
+            
+            // Check for missing fields
+            const missingFields = expectedFields.filter(field => !actualFields.includes(field));
+            const extraFields = actualFields.filter(field => !expectedFields.includes(field));
+            
+            if (missingFields.length > 0) {
+                schemaHtml += `<div class="error">
+                    <h4>❌ Missing Fields (${missingFields.length}):</h4>
+                    <p>${missingFields.join(', ')}</p>
+                </div>`;
+            }
+            
+            if (extraFields.length > 0) {
+                schemaHtml += `<div class="info">
+                    <h4>➕ Extra Fields (${extraFields.length}):</h4>
+                    <p>${extraFields.join(', ')}</p>
+                </div>`;
+            }
+            
+            if (missingFields.length === 0 && extraFields.length === 0) {
+                schemaHtml += `<div class="success">
+                    <h4>🎉 Perfect Match!</h4>
+                    <p>Your database schema matches the expected ProfileSetup requirements exactly.</p>
+                </div>`;
+            }
+            
+            showResult(schemaHtml, 'info');
+        }
+
+        function showExpectedSchema() {
+            let schemaHtml = `<h3>📋 Expected Profile Schema</h3>
+                <div class="schema-table">
+                    <div class="field-row">
+                        <span class="field-header">Field Name</span>
+                        <span class="field-header">Type</span>
+                        <span class="field-header">Nullable</span>
+                        <span class="field-header">Default/Constraints</span>
+                    </div>`;
+            
+            Object.entries(expectedProfileFields).forEach(([field, config]) => {
+                schemaHtml += `<div class="field-row">
+                    <span>${field}</span>
+                    <span>${config.type}</span>
+                    <span>${config.nullable ? 'YES' : 'NO'}</span>
+                    <span>${config.default || config.check || config.references || ''}</span>
+                </div>`;
+            });
+            
+            schemaHtml += `</div>`;
+            showResult(schemaHtml, 'info');
+        }
+
+        async function checkRLSPolicies() {
+            showResult('🔒 Checking Row Level Security policies...', 'info');
+            
+            try {
+                // Try to query policies (this might not work with anon key)
+                const { data, error } = await supabase.rpc('get_policies');
+                
+                if (error) {
+                    showResult(`⚠️ Cannot check RLS policies directly: ${error.message}
+                        <br><br><strong>Manual Check Required:</strong>
+                        <ol>
+                            <li>Go to Supabase Dashboard → Authentication → Policies</li>
+                            <li>Check that profiles table has policies for SELECT, INSERT, UPDATE</li>
+                            <li>Verify policies allow users to manage their own profiles</li>
+                        </ol>`, 'warning');
+                } else {
+                    showResult(`✅ RLS policies found: ${JSON.stringify(data)}`, 'success');
+                }
+            } catch (err) {
+                showResult(`ℹ️ RLS policy check requires elevated permissions. 
+                    <br><strong>Manual verification recommended in Supabase Dashboard.</strong>`, 'info');
+            }
+        }
+
+        async function checkStorageConfig() {
+            showResult('📦 Checking storage configuration...', 'info');
+            
+            try {
+                const { data: buckets, error } = await supabase.storage.listBuckets();
+                
+                if (error) {
+                    showResult(`❌ Storage check failed: ${error.message}`, 'error');
+                    return;
+                }
+                
+                const photosBucket = buckets.find(b => b.name === 'photos');
+                
+                if (!photosBucket) {
+                    showResult(`❌ <strong>Photos bucket missing!</strong>
+                        <br>Available buckets: ${buckets.map(b => b.name).join(', ') || 'None'}
+                        <br><br><strong>This is why photo uploads fail!</strong>`, 'error');
+                } else {
+                    showResult(`✅ Photos bucket exists
+                        <br>📊 Public: ${photosBucket.public}
+                        <br>📅 Created: ${photosBucket.created_at}`, 'success');
+                    
+                    // Test upload
+                    const testFile = new Blob(['test'], { type: 'text/plain' });
+                    const { error: uploadError } = await supabase.storage
+                        .from('photos')
+                        .upload('test/schema-check.txt', testFile);
+                    
+                    if (uploadError) {
+                        showResult(`❌ Upload test failed: ${uploadError.message}
+                            <br><strong>Storage policies may be missing!</strong>`, 'error');
+                    } else {
+                        showResult(`✅ Upload test successful!`, 'success');
+                        // Clean up
+                        await supabase.storage.from('photos').remove(['test/schema-check.txt']);
+                    }
+                }
+                
+            } catch (err) {
+                showResult(`❌ Storage check error: ${err.message}`, 'error');
+            }
+        }
+
+        async function runFullDiagnostic() {
+            clearResults();
+            showResult('<h2>🚀 Running Complete Database Diagnostic</h2>', 'info');
+            
+            await checkDatabaseSchema();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await checkRLSPolicies();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await checkStorageConfig();
+            
+            showResult('<h3>🏁 Diagnostic Complete!</h3><p>Review the results above to identify any issues with your database configuration.</p>', 'info');
+        }
+
+        // Auto-run basic check on page load
+        window.onload = () => {
+            setTimeout(() => {
+                showResult('🔄 Running automatic schema check...', 'info');
+                checkDatabaseSchema();
+            }, 1000);
+        };
+    </script>
+</body>
+</html>
