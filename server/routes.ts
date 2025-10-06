@@ -57,6 +57,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("[v0] Profile update request:", { userId: req.user.id, body: req.body })
 
+      // Clean the request body - convert empty strings to null for optional fields
+      const cleanedBody = Object.entries(req.body).reduce((acc, [key, value]) => {
+        // Convert empty strings to null for optional fields
+        if (value === "" || value === undefined) {
+          acc[key] = null
+        } else {
+          acc[key] = value
+        }
+        return acc
+      }, {} as any)
+
+      console.log("[v0] Cleaned body:", cleanedBody)
+
       // Check if profile exists
       const { data: existingProfile, error: fetchError } = await supabaseAdmin
         .from("profiles")
@@ -65,7 +78,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .single()
 
       if (fetchError && fetchError.code !== "PGRST116") {
-        // PGRST116 = no rows found, which is fine
         console.error("[v0] Error fetching profile:", fetchError)
         throw fetchError
       }
@@ -77,7 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { data, error } = await supabaseAdmin
           .from("profiles")
           .update({
-            ...req.body,
+            ...cleanedBody,
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", req.user.id)
@@ -98,9 +110,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             {
               user_id: req.user.id,
               is_profile_complete: false,
-              is_visible: true,
+              is_visible: false,
               verification_status: "unverified",
-              ...req.body,
+              ...cleanedBody,
             },
           ])
           .select()
@@ -661,4 +673,3 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app)
   return httpServer
 }
-
