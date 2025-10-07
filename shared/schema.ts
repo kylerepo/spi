@@ -346,3 +346,20 @@ export const createSafeSexSchema = z.object({
   last_test_date: z.string().optional(),
   custom_practices: z.string().optional(),
 });
+
+
+// Community post schemas
+export const insertCommunityPostSchema = z.object({
+  title: z.string().min(1, "Title is required").max(200),
+  content: z.string().min(1, "Content is required").max(2000),
+  postType: z.enum(["iso", "discussion", "announcement", "event"]).default("iso"),
+  isoSeekingType: z.enum(["couples_seeking", "singles_seeking", "groups", "all"]).optional(),
+  category: z.string().min(1, "Category is required").max(50),
+  city: z.string().max(100).optional(),
+  state: z.string().max(100).optional(),
+  country: z.string().max(100).optional(),
+  isUrgent: z.boolean().default(false),
+  authorId: z.string().uuid("Valid author ID is required"),
+});
+
+export type InsertCommunityPost = z.infer<typeof insertCommunityPostSchema>;
