@@ -164,14 +164,14 @@ interface ProfileSetupProps {
   onComplete: () => void
 }
 
-export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
+export default function ProfileSetupUpdated({ onComplete }: ProfileSetupProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [showSuccessDialog, setShowSuccessDialog] = useState(false)
   const [stepErrors, setStepErrors] = useState<{ [key: number]: string }>({})
-  const [uploadedPhotos, setUploadedPhotos] = useState<{ url: string; path?: string }[]>([])
+  const [uploadedPhotos, setUploadedPhotos] = useState<{ url: string; path?: string; id?: string }[]>([])
   const { user } = useAuth()
   const { toast } = useToast()
 
@@ -203,8 +203,32 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
 
   const watchAccountType = form.watch("accountType")
   const isCoupleAccount = watchAccountType === "couple"
-  const maxSteps = 11 // All users go through all steps, singles skip step 5 (partner info)
+  const maxSteps = 11
   const progress = (currentStep / maxSteps) * 100
+
+  // Supabase Edge Function calls
+  const callEdgeFunction = async (functionName: string, data: any) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      throw new Error("No valid session found")
+    }
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || "Request failed")
+    }
+
+    return response.json()
+  }
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -218,22 +242,42 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
     setError("")
 
     try {
-      const { uploadProfilePhoto } = await import("@/lib/upload")
-
       const uploadPromises = Array.from(files)
         .slice(0, 5 - uploadedPhotos.length)
         .map(async (file, index) => {
           console.log(`Uploading file ${index + 1}:`, file.name, file.size)
 
-          // Upload using the proper API endpoint
-          const result = await uploadProfilePhoto(
-            file,
-            uploadedPhotos.length === 0 && index === 0, // First photo is profile pic
-            uploadedPhotos.length + index,
-          )
+          // Create form data for edge function
+          const formData = new FormData()
+          formData.append("photo", file)
+          formData.append("is_profile", (uploadedPhotos.length === 0 && index === 0).toString())
+          formData.append("order", (uploadedPhotos.length + index).toString())
 
-          console.log(`File ${index + 1} uploaded successfully:`, result.url)
-          return { url: result.url, path: result.path, id: result.id }
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session?.access_token) {
+            throw new Error("No valid session found")
+          }
+
+          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-profile-photo`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${session.access_token}`,
+            },
+            body: formData,
+          })
+
+          if (!response.ok) {
+            const error = await response.json()
+            throw new Error(error.error || "Upload failed")
+          }
+
+          const result = await response.json()
+          console.log(`File ${index + 1} uploaded successfully:`, result.photo.url)
+          return { 
+            url: result.photo.url, 
+            path: result.photo.storage_path, 
+            id: result.photo.id 
+          }
         })
 
       const newPhotos = await Promise.all(uploadPromises)
@@ -278,14 +322,17 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
 
   const removePhoto = async (index: number) => {
     const photo = uploadedPhotos[index]
-    if (photo.path) {
+    if (photo.id) {
       try {
-        // Extract file path from URL and delete from Supabase storage
-        const url = new URL(photo.path)
-        const filePath = url.pathname.split("/").slice(2).join("/")
-        await supabase.storage.from("photos").remove([filePath])
+        // Delete from database using Supabase client
+        const { error } = await supabase
+          .from('profile_photos')
+          .delete()
+          .eq('id', photo.id)
+
+        if (error) throw error
       } catch (error) {
-        console.error("Error deleting photo from storage:", error)
+        console.error("Error deleting photo from database:", error)
       }
     }
     setUploadedPhotos((prev) => prev.filter((_, i) => i !== index))
@@ -374,90 +421,62 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       throw new Error("User not authenticated")
     }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session?.access_token) {
-      throw new Error("No valid session found")
-    }
-
     // Save different data based on current step
     if (currentStep >= 2 && currentStep <= 4) {
       // Steps 2-4: Basic profile data
-      await fetch("/api/profile", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          display_name: data.displayName,
-          bio: data.bio,
-          account_type: data.accountType,
-          profile_type: data.profileType,
-          gender: data.gender,
-          sexuality: data.sexuality,
-          age: data.age,
-          city: data.city,
-          state: data.state,
-          country: data.country,
-          relationship_status: data.relationshipStatus,
-          headline: data.headline,
-        }),
+      await callEdgeFunction("create-profile", {
+        display_name: data.displayName,
+        bio: data.bio,
+        account_type: data.accountType,
+        profile_type: data.profileType,
+        gender: data.gender,
+        gender_other: data.genderOther,
+        sexuality: data.sexuality,
+        sexuality_other: data.sexualityOther,
+        age: data.age,
+        city: data.city,
+        state: data.state,
+        country: data.country,
+        relationship_status: data.relationshipStatus,
+        relationship_status_other: data.relationshipStatusOther,
+        headline: data.headline,
       })
     }
 
     if (currentStep === 5 && isCoupleAccount) {
       // Step 5: Couple profile data
-      await fetch("/api/profile/couple", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          partner1_name: data.partner1Name,
-          partner1_gender: data.partner1Gender,
-          partner1_sexuality: data.partner1Sexuality,
-          partner1_bio: data.partner1Bio,
-          partner2_name: data.partner2Name,
-          partner2_gender: data.partner2Gender,
-          partner2_sexuality: data.partner2Sexuality,
-          partner2_bio: data.partner2Bio,
-        }),
+      await callEdgeFunction("create-couple-profile", {
+        partner1_name: data.partner1Name,
+        partner1_gender: data.partner1Gender,
+        partner1_gender_other: data.partner1GenderOther,
+        partner1_sexuality: data.partner1Sexuality,
+        partner1_sexuality_other: data.partner1SexualityOther,
+        partner1_bio: data.partner1Bio,
+        partner2_name: data.partner2Name,
+        partner2_gender: data.partner2Gender,
+        partner2_gender_other: data.partner2GenderOther,
+        partner2_sexuality: data.partner2Sexuality,
+        partner2_sexuality_other: data.partner2SexualityOther,
+        partner2_bio: data.partner2Bio,
       })
     }
 
     if (currentStep === 6) {
       // Step 6: Preferences
-      await fetch("/api/profile/preferences", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          seeking_genders: data.seekingGenders,
-          seeking_account_types: data.seekingAccountTypes,
-          age_range_min: data.ageRangeMin,
-          age_range_max: data.ageRangeMax,
-        }),
+      await callEdgeFunction("save-profile-preferences", {
+        seeking_genders: data.seekingGenders,
+        seeking_account_types: data.seekingAccountTypes,
+        age_range_min: data.ageRangeMin,
+        age_range_max: data.ageRangeMax,
       })
     }
 
     if (currentStep === 7) {
       // Step 7: Interests
       if (data.interests?.length) {
-        await fetch("/api/profile/interests", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            interests: data.interests,
-            custom_interests: data.customInterests,
-          }),
+        await callEdgeFunction("save-profile-interests", {
+          interests: data.interests,
+          custom_interests: data.customInterests,
         })
       }
     }
@@ -465,16 +484,9 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
     if (currentStep === 9) {
       // Step 9: Boundaries
       if (data.boundaries?.length) {
-        await fetch("/api/profile/boundaries", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            boundaries: data.boundaries,
-            custom_boundaries: data.customBoundaries,
-          }),
+        await callEdgeFunction("save-profile-boundaries", {
+          boundaries: data.boundaries,
+          custom_boundaries: data.customBoundaries,
         })
       }
     }
@@ -482,16 +494,9 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
     if (currentStep === 10) {
       // Step 10: Safe sex practices
       if (data.safeSexPractices?.length) {
-        await fetch("/api/profile/safe-sex", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            practices: data.safeSexPractices,
-            custom_practices: data.customSafeSexPractices,
-          }),
+        await callEdgeFunction("save-profile-safe-sex", {
+          practices: data.safeSexPractices,
+          custom_practices: data.customSafeSexPractices,
         })
       }
     }
@@ -513,7 +518,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
         setCurrentStep(currentStep + 1)
       }
     } catch (error: any) {
-      console.error("[v0] Error saving step data:", error)
+      console.error("Error saving step data:", error)
       setError(`Failed to save: ${error.message}`)
       toast({
         title: "Save Failed",
@@ -541,47 +546,21 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       setLoading(true)
       setError("")
 
-      console.log("[v0] Starting profile completion...")
+      console.log("Starting profile completion...")
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
         throw new Error("User not authenticated")
       }
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error("No valid session found")
-      }
-
       await saveCurrentStepData()
 
-      console.log("[v0] Marking profile as complete...")
+      console.log("Marking profile as complete...")
 
-      // Mark profile as complete
-      const response = await fetch("/api/profile", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          is_profile_complete: true,
-          is_visible: true,
-        }),
-      })
+      // Mark profile as complete using edge function
+      await callEdgeFunction("complete-profile", {})
 
-      if (!response.ok) {
-        const result = await response.json()
-        console.error("[v0] Profile completion failed:", result)
-        throw new Error(result.error || result.details || "Failed to complete profile")
-      }
-
-      const result = await response.json()
-      console.log("[v0] Profile completion successful:", result)
+      console.log("Profile completion successful")
 
       setSuccess("Profile created successfully! Welcome to SPICE!")
       setShowSuccessDialog(true)
@@ -599,7 +578,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
         onComplete()
       }, 3000)
     } catch (error: any) {
-      console.error("[v0] Profile completion error:", error)
+      console.error("Profile completion error:", error)
       setError(error.message || "Failed to complete profile")
       toast({
         title: "Profile Completion Failed",
@@ -624,137 +603,76 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
         throw new Error("User not authenticated")
       }
 
-      // Get current session token
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        throw new Error("No valid session found")
-      }
-
-      // Submit profile data to backend
-      const response = await fetch("/api/profile", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          displayName: data.displayName,
-          bio: data.bio,
-          accountType: data.accountType,
-          profileType: data.profileType,
-          gender: data.gender,
-          sexuality: data.sexuality,
-          age: data.age,
-          city: data.city,
-          state: data.state,
-          country: data.country,
-          relationshipStatus: data.relationshipStatus,
-          headline: data.headline,
-          isProfileComplete: false,
-        }),
+      // Submit profile data using edge functions
+      await callEdgeFunction("create-profile", {
+        display_name: data.displayName,
+        bio: data.bio,
+        account_type: data.accountType,
+        profile_type: data.profileType,
+        gender: data.gender,
+        gender_other: data.genderOther,
+        sexuality: data.sexuality,
+        sexuality_other: data.sexualityOther,
+        age: data.age,
+        city: data.city,
+        state: data.state,
+        country: data.country,
+        relationship_status: data.relationshipStatus,
+        relationship_status_other: data.relationshipStatusOther,
+        headline: data.headline,
       })
-
-      const result = await response.json()
-      console.log("Profile submission result:", result)
-
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to save profile")
-      }
 
       // If couple account, save couple profile data
       if (data.accountType === "couple") {
-        const coupleResponse = await fetch("/api/profile/couple", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            partner1Name: data.partner1Name,
-            partner1Gender: data.partner1Gender,
-            partner1Sexuality: data.partner1Sexuality,
-            partner1Bio: data.partner1Bio,
-            partner2Name: data.partner2Name,
-            partner2Gender: data.partner2Gender,
-            partner2Sexuality: data.partner2Sexuality,
-            partner2Bio: data.partner2Bio,
-          }),
+        await callEdgeFunction("create-couple-profile", {
+          partner1_name: data.partner1Name,
+          partner1_gender: data.partner1Gender,
+          partner1_gender_other: data.partner1GenderOther,
+          partner1_sexuality: data.partner1Sexuality,
+          partner1_sexuality_other: data.partner1SexualityOther,
+          partner1_bio: data.partner1Bio,
+          partner2_name: data.partner2Name,
+          partner2_gender: data.partner2Gender,
+          partner2_gender_other: data.partner2GenderOther,
+          partner2_sexuality: data.partner2Sexuality,
+          partner2_sexuality_other: data.partner2SexualityOther,
+          partner2_bio: data.partner2Bio,
         })
-
-        if (!coupleResponse.ok) {
-          const coupleError = await coupleResponse.json()
-          throw new Error(coupleError.error || "Failed to save couple information")
-        }
       }
 
       // Save preferences
       if (data.seekingGenders?.length || data.seekingAccountTypes?.length) {
-        await fetch("/api/profile/preferences", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            seekingGenders: data.seekingGenders,
-            seekingAccountTypes: data.seekingAccountTypes,
-            ageRangeMin: data.ageRangeMin,
-            ageRangeMax: data.ageRangeMax,
-          }),
+        await callEdgeFunction("save-profile-preferences", {
+          seeking_genders: data.seekingGenders,
+          seeking_account_types: data.seekingAccountTypes,
+          age_range_min: data.ageRangeMin,
+          age_range_max: data.ageRangeMax,
         })
       }
 
       // Save interests
       if (data.interests?.length) {
-        await fetch("/api/profile/interests", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            interests: data.interests.map((interest) => ({
-              name: interest,
-              customValue: data.customInterests,
-            })),
-          }),
+        await callEdgeFunction("save-profile-interests", {
+          interests: data.interests,
+          custom_interests: data.customInterests,
         })
       }
 
       // Save boundaries
       if (data.boundaries?.length) {
-        await fetch("/api/profile/boundaries", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            boundaries: data.boundaries,
-            customBoundaries: data.customBoundaries,
-          }),
+        await callEdgeFunction("save-profile-boundaries", {
+          boundaries: data.boundaries,
+          custom_boundaries: data.customBoundaries,
         })
       }
 
       // Save safe sex practices
       if (data.safeSexPractices?.length) {
-        await fetch("/api/profile/safe-sex", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            practices: data.safeSexPractices,
-            customPractices: data.customSafeSexPractices,
-          }),
+        await callEdgeFunction("save-profile-safe-sex", {
+          practices: data.safeSexPractices,
+          custom_practices: data.customSafeSexPractices,
         })
       }
-
-      // Photos are already saved when uploaded via /api/upload/profile-photo
-      // No need to save them again here
 
       setSuccess("Profile saved! Complete your profile to start connecting.")
       setShowSuccessDialog(false)
@@ -1441,9 +1359,9 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
                           src={photo.url || "/placeholder.svg"}
                           alt={`Uploaded photo ${index + 1}`}
                           className="w-full h-full object-cover"
-                          onLoad={() => console.log(`[v0] Photo ${index + 1} loaded:`, photo.url)}
+                          onLoad={() => console.log(`Photo ${index + 1} loaded:`, photo.url)}
                           onError={(e) => {
-                            console.error(`[v0] Photo ${index + 1} failed to load:`, photo.url)
+                            console.error(`Photo ${index + 1} failed to load:`, photo.url)
                             e.currentTarget.src =
                               "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEyOCIgdmlld0JveD0iMCAwIDIwMCAxMjgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTI4IiBmaWxsPSIjMjEyMTIxIi8+CjxwYXRoIGQ9Ik04MCA2NEMxMTAuOTI4IDY0IDEzNiA4OS4wNzIxIDEzNiAxMjBIMjRDMjQgODkuMDcyMSA0OS4wNzIxIDY0IDgwIDY0WiIgZmlsbD0iIzM3Mzc0MSIvPgo8Y2lyY2xlIGN4PSI3MCIgY3k9IjQ0IiByPSIxNiIgZmlsbD0iIzM3Mzc0MSIvPgo8cGF0aCBkPSJNNTYgMTA0TDE0NCAxNiIgc3Ryb2tlPSIjRkY2QkI0IiBzdHJva2Utd2lkdGg9IjIiLz4KPHN2Zz4K"
                           }}
@@ -1488,7 +1406,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Background Image - Same as SignupForm */}
+      {/* Background Image */}
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
@@ -1659,7 +1577,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
             )}
           </form>
 
-          {/* Custom CSS for animations - Same as SignupForm */}
+          {/* Custom CSS for animations */}
           <style>{`
             @keyframes glow {
               0%, 100% {
