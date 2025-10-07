@@ -3,6 +3,7 @@ import { AuthService } from './auth';
 import { neonDB } from './db-neon';
 import { StorageService } from './storage-neon';
 import multer from 'multer';
+import { v4 as uuidv4 } from 'uuid';
 
 // Extend Express Request type
 declare global {
@@ -168,16 +169,74 @@ export async function registerNeonRoutes(app: Express) {
   // Create profile
   app.post('/api/profile', authenticateUser, async (req: Request, res: Response) => {
     try {
+      // Validate required fields
+      const { displayName, accountType, profileType } = req.body;
+      
+      if (!displayName || !accountType || !profileType) {
+        return res.status(400).json({ 
+          error: 'Missing required fields: displayName, accountType, and profileType are required' 
+        });
+      }
+
+      // Check if profile already exists
+      const existingProfile = await neonDB.getProfile(req.user!.id);
+      if (existingProfile) {
+        // Update existing profile instead of creating new one
+        const updatedProfile = await neonDB.updateProfileByUserId(req.user!.id, {
+          ...req.body,
+          isProfileComplete: req.body.isProfileComplete || false,
+        });
+        return res.json(updatedProfile);
+      }
+
+      // Create new profile with validated data
       const profileData = {
-        ...req.body,
         userId: req.user!.id,
-        isProfileComplete: false,
+        displayName: displayName.trim(),
+        accountType,
+        profileType,
+        gender: req.body.gender || null,
+        genderOther: req.body.genderOther || null,
+        sexuality: req.body.sexuality || null,
+        sexualityOther: req.body.sexualityOther || null,
+        age: req.body.age ? parseInt(req.body.age) : null,
+        relationshipStatus: req.body.relationshipStatus || null,
+        relationshipStatusOther: req.body.relationshipStatusOther || null,
+        headline: req.body.headline || null,
+        bio: req.body.bio || null,
+        city: req.body.city || null,
+        state: req.body.state || null,
+        country: req.body.country || 'United States',
+        seekingGenders: req.body.seekingGenders || [],
+        seekingAccountTypes: req.body.seekingAccountTypes || [],
+        ageRangeMin: req.body.ageRangeMin ? parseInt(req.body.ageRangeMin) : null,
+        ageRangeMax: req.body.ageRangeMax ? parseInt(req.body.ageRangeMax) : null,
+        isProfileComplete: req.body.isProfileComplete || false,
+        isVisible: true,
+        verificationStatus: 'pending',
+        membershipType: 'free',
+        maxDistance: req.body.maxDistance ? parseInt(req.body.maxDistance) : null,
+        showOnlyVerified: req.body.showOnlyVerified || false,
+        showOnlyWithPhotos: req.body.showOnlyWithPhotos || false,
+        requiredInterests: req.body.requiredInterests || [],
+        excludedInterests: req.body.excludedInterests || [],
       };
 
       const profile = await neonDB.createProfile(profileData);
       res.json(profile);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error('Profile creation error:', error);
+      
+      // Handle specific database errors
+      if (error.message?.includes('duplicate key') || error.message?.includes('unique constraint')) {
+        return res.status(409).json({ error: 'Profile already exists for this user' });
+      }
+      
+      if (error.message?.includes('invalid input syntax') || error.message?.includes('pattern')) {
+        return res.status(400).json({ error: 'Invalid data format provided' });
+      }
+      
+      res.status(500).json({ error: error.message || 'Failed to create profile' });
     }
   });
 
@@ -273,6 +332,53 @@ export async function registerNeonRoutes(app: Express) {
   });
 
   // ==================== PHOTO ROUTES ====================
+
+  // Get upload URL for photos
+  app.post('/api/objects/upload', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      // Generate a unique filename
+      const fileId = uuidv4();
+      const filename = `profile-photos/${fileId}`;
+      
+      // For Vercel Blob, we'll return a direct upload URL
+      // The client will upload directly to this URL
+      const uploadURL = `/api/profile/photos/direct-upload?filename=${filename}`;
+      
+      res.json({ uploadURL });
+    } catch (error: any) {
+      console.error('Upload URL generation error:', error);
+      res.status(500).json({ error: 'Failed to generate upload URL' });
+    }
+  });
+
+  // Direct upload endpoint for photos
+  app.put('/api/profile/photos/direct-upload', authenticateUser, upload.single('file'), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file provided' });
+      }
+
+      const filename = req.query.filename as string || `${uuidv4()}.jpg`;
+      
+      // Get profile
+      const profile = await neonDB.getProfile(req.user!.id);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Upload to Vercel Blob
+      const result = await StorageService.uploadProfilePhoto(
+        req.file.buffer,
+        profile.id,
+        filename
+      );
+
+      res.json(result);
+    } catch (error: any) {
+      console.error('Direct upload error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // Upload profile photo
   app.post('/api/profile/photos', authenticateUser, upload.single('photo'), async (req: Request, res: Response) => {

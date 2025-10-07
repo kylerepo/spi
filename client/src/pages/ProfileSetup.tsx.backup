@@ -167,101 +167,113 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
   const maxSteps = 11 // All users go through all steps, singles skip step 5 (partner info)
   const progress = (currentStep / maxSteps) * 100
 
-    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files
-      if (!files) {
-        console.log("No files selected")
-        return
-      }
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) {
+      console.log('No files selected')
+      return
+    }
 
-      console.log(`Uploading ${files.length} files`)
-      setLoading(true)
-      setError("")
-      
-      try {
-        const uploadPromises = Array.from(files).slice(0, 5 - uploadedPhotos.length).map(async (file, index) => {
-          // Validate file type and size
-          if (!file.type.startsWith("image/")) {
-            throw new Error(`File ${file.name} is not an image`)
-          }
-          if (file.size > 10 * 1024 * 1024) { // 10MB limit
-            throw new Error(`File ${file.name} is too large (max 10MB)`)
-          }
-          
-          console.log(`Uploading file ${index + 1}:`, file.name, file.size)
-          
-          // Get session for authentication
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session?.access_token) {
-            throw new Error("Not authenticated")
-          }
-
-          // Create FormData for file upload
-          const formData = new FormData()
-          formData.append("photo", file)
-
-          // Upload directly to the photo endpoint
-          const uploadResponse = await fetch("/api/profile/photos", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${session.access_token}`,
-            },
-            body: formData
-          })
-          
-          if (!uploadResponse.ok) {
-            const errorText = await uploadResponse.text()
-            throw new Error(`Failed to upload file: ${errorText}`)
-          }
-          
-          const result = await uploadResponse.json()
-          console.log(`File ${index + 1} uploaded successfully:`, result)
-          
-          return { 
-            url: result.url, 
-            path: result.storagePath 
-          }
-        })
-
-        const newPhotos = await Promise.all(uploadPromises)
-        console.log("All photos uploaded:", newPhotos)
-        
-        // Update state immediately to show the photos
-        const updatedPhotos = [...uploadedPhotos, ...newPhotos].slice(0, 5)
-        setUploadedPhotos(updatedPhotos)
-        console.log("Updated photo state:", updatedPhotos)
-        
-        toast({
-          title: "Photos uploaded!",
-          description: `${newPhotos.length} photo(s) uploaded successfully.`,
-        })
-      } catch (error) {
-        console.error("Photo upload error:", error)
-        let errorMessage = "Failed to upload photos. Please try again."
-        
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        if (errorMsg.includes("file_size_limit") || errorMsg.includes("too large")) {
-          errorMessage = "File too large. Please choose images under 10MB."
-        } else if (errorMsg.includes("Invalid file type") || errorMsg.includes("not an image")) {
-          errorMessage = "Please select valid image files (JPG, PNG, WebP)."
-        } else if (errorMsg.includes("Not authenticated")) {
-          errorMessage = "Authentication error. Please refresh and try again."
-        } else if (errorMsg) {
-          errorMessage = errorMsg
+    // For new signups, we'll use a temporary ID that will be replaced during final submission
+    const tempUserId = user?.id || 'temp-' + Date.now()
+    console.log(`Uploading ${files.length} files for user:`, tempUserId)
+    setLoading(true)
+    setError('')
+    
+    try {
+      const uploadPromises = Array.from(files).slice(0, 5 - uploadedPhotos.length).map(async (file, index) => {
+        // Validate file type and size
+        if (!file.type.startsWith('image/')) {
+          throw new Error(`File ${file.name} is not an image`)
+        }
+        if (file.size > 10 * 1024 * 1024) { // 10MB limit
+          throw new Error(`File ${file.name} is too large (max 10MB)`)
         }
         
-        setError(`Photo upload failed: ${errorMessage}`)
-        toast({
-          title: "Upload failed",
-          description: errorMessage,
-          variant: "destructive",
+        console.log(`Uploading file ${index + 1}:`, file.name, file.size)
+        
+        // Get upload URL from backend using proper authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          throw new Error('Not authenticated')
+        }
+
+        const uploadUrlResponse = await fetch('/api/objects/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          }
         })
-      } finally {
-        setLoading(false)
-        // Reset file input
-        if (e.target) e.target.value = ""
+        
+        if (!uploadUrlResponse.ok) {
+          const errorText = await uploadUrlResponse.text()
+          throw new Error(`Failed to get upload URL: ${errorText}`)
+        }
+        
+        const { uploadURL } = await uploadUrlResponse.json()
+        
+        // Upload file to signed URL
+        const uploadResponse = await fetch(uploadURL, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': file.type,
+          },
+          body: file
+        })
+        
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text()
+          throw new Error(`Failed to upload file to storage: ${errorText}`)
+        }
+        
+        // Extract object path from upload URL for storage
+        const objectPath = new URL(uploadURL).pathname.split('/').pop()
+        const photoUrl = `/objects/${objectPath}`
+        
+        console.log(`File ${index + 1} uploaded successfully:`, photoUrl)
+        return { url: photoUrl, path: objectPath }
+      })
+
+      const newPhotos = await Promise.all(uploadPromises)
+      console.log('All photos uploaded:', newPhotos)
+      
+      // Update state immediately to show the photos
+      const updatedPhotos = [...uploadedPhotos, ...newPhotos].slice(0, 5)
+      setUploadedPhotos(updatedPhotos)
+      console.log('Updated photo state:', updatedPhotos)
+      
+      toast({
+        title: "Photos uploaded!",
+        description: `${newPhotos.length} photo(s) uploaded successfully.`,
+      })
+    } catch (error) {
+      console.error('Photo upload error:', error)
+      let errorMessage = 'Failed to upload photos. Please try again.'
+      
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes('file_size_limit')) {
+        errorMessage = 'File too large. Please choose images under 10MB.'
+      } else if (errorMsg.includes('Invalid file type')) {
+        errorMessage = 'Please select valid image files (JPG, PNG, WebP).'
+      } else if (errorMsg.includes('Missing Supabase')) {
+        errorMessage = 'Photo storage is not configured. Please try again later.'
+      } else if (errorMsg) {
+        errorMessage = errorMsg
       }
+      
+      setError(`Photo upload failed: ${errorMessage}`)
+      toast({
+        title: "Upload failed",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      // Reset file input
+      if (e.target) e.target.value = ''
     }
+  }
 
   const removePhoto = async (index: number) => {
     const photo = uploadedPhotos[index]

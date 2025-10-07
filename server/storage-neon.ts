@@ -36,7 +36,14 @@ export class StorageService {
       const maxFileSize = options.maxFileSize || this.DEFAULT_MAX_FILE_SIZE;
       const allowedTypes = options.allowedMimeTypes || this.ALLOWED_IMAGE_TYPES;
 
-      // Validate file
+      // Validate file size for Buffer
+      if (file instanceof Buffer) {
+        if (file.length > maxFileSize) {
+          throw new Error(`File size exceeds ${maxFileSize / 1024 / 1024}MB limit`);
+        }
+      }
+
+      // Validate file for File object
       if (file instanceof File) {
         if (file.size > maxFileSize) {
           throw new Error(`File size exceeds ${maxFileSize / 1024 / 1024}MB limit`);
@@ -49,7 +56,7 @@ export class StorageService {
 
       // Generate unique filename
       const fileExt = filename.split('.').pop()?.toLowerCase() || 'jpg';
-      const uniqueFilename = `${profileId}/${uuidv4()}.${fileExt}`;
+      const uniqueFilename = `profile-photos/${profileId}/${uuidv4()}.${fileExt}`;
 
       // Upload to Vercel Blob
       const blob = await put(uniqueFilename, file, {
@@ -64,6 +71,9 @@ export class StorageService {
           profileId,
           url: blob.url,
           storagePath: uniqueFilename,
+          isProfile: false,
+          order: 0,
+          isVerified: false,
         })
         .returning();
 
@@ -73,7 +83,7 @@ export class StorageService {
       };
     } catch (error) {
       console.error('Upload error:', error);
-      throw new Error('Failed to upload file');
+      throw new Error(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
