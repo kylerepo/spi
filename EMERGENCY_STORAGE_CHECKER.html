@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚨 EMERGENCY: Fix Supabase Storage</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 20px auto; 
+            padding: 20px; 
+            background: #1a1a1a; 
+            color: white; 
+        }
+        .status { 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 8px; 
+            border-left: 4px solid;
+        }
+        .success { background: #1a4a3a; border-color: #4ade80; }
+        .error { background: #4a1a1a; border-color: #ef4444; }
+        .warning { background: #4a3a1a; border-color: #f59e0b; }
+        .info { background: #1a3a4a; border-color: #3b82f6; }
+        button { 
+            padding: 12px 24px; 
+            margin: 8px; 
+            background: #dc2626; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: bold;
+        }
+        button:hover { background: #b91c1c; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        pre { 
+            background: #2a2a2a; 
+            padding: 15px; 
+            border-radius: 6px; 
+            overflow-x: auto; 
+            border: 1px solid #444;
+        }
+        .highlight { background: #fbbf24; color: #000; padding: 2px 4px; border-radius: 3px; }
+        .step { background: #374151; padding: 15px; margin: 10px 0; border-radius: 8px; }
+        h1 { color: #dc2626; }
+        h2 { color: #f59e0b; }
+    </style>
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <h1>🚨 EMERGENCY STORAGE FIX</h1>
+    <p><strong>This tool will diagnose and help fix your photo upload issues.</strong></p>
+    
+    <div class="step">
+        <h2>Step 1: Diagnose Storage Issues</h2>
+        <button onclick="diagnoseStorage()">🔍 Check Storage Configuration</button>
+        <div id="diagnosisResult"></div>
+    </div>
+
+    <div class="step">
+        <h2>Step 2: Manual Fix Instructions</h2>
+        <div id="fixInstructions" style="display: none;">
+            <div class="error">
+                <h3>🚨 STORAGE BUCKET MISSING</h3>
+                <p>Your Supabase project is missing the "photos" storage bucket. Follow these steps:</p>
+                
+                <h4>Create Storage Bucket:</h4>
+                <ol>
+                    <li>Go to <a href="https://supabase.com/dashboard" target="_blank" style="color: #60a5fa;">Supabase Dashboard</a></li>
+                    <li>Select your project: <span class="highlight">hvafquyruidsvteerdwf</span></li>
+                    <li>Click <strong>Storage</strong> in the left sidebar</li>
+                    <li>Click <strong>"New bucket"</strong></li>
+                    <li>Enter these settings:
+                        <ul>
+                            <li><strong>Name:</strong> <span class="highlight">photos</span> (exactly this)</li>
+                            <li><strong>Public bucket:</strong> <span class="highlight">✅ MUST BE CHECKED</span></li>
+                            <li><strong>File size limit:</strong> 50MB</li>
+                            <li><strong>Allowed MIME types:</strong> image/* (optional)</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>"Create bucket"</strong></li>
+                </ol>
+
+                <h4>Apply Storage Policies:</h4>
+                <ol>
+                    <li>Go to <strong>SQL Editor</strong> in Supabase Dashboard</li>
+                    <li>Copy and paste this SQL code:</li>
+                </ol>
+                
+                <pre id="sqlCode">-- Create storage policies for photos bucket
+INSERT INTO storage.policies (id, bucket_id, name, definition, command, roles)
+VALUES 
+  ('photos-upload', 'photos', 'Authenticated users can upload', 'bucket_id = ''photos'' AND (storage.foldername(name))[1] = auth.uid()::text', 'INSERT', '{authenticated}'),
+  ('photos-read', 'photos', 'Public can read photos', 'bucket_id = ''photos''', 'SELECT', '{public}'),
+  ('photos-delete', 'photos', 'Users can delete own photos', 'bucket_id = ''photos'' AND (storage.foldername(name))[1] = auth.uid()::text', 'DELETE', '{authenticated}'),
+  ('photos-update', 'photos', 'Users can update own photos', 'bucket_id = ''photos'' AND (storage.foldername(name))[1] = auth.uid()::text', 'UPDATE', '{authenticated}')
+ON CONFLICT (id) DO NOTHING;</pre>
+                
+                <button onclick="copySQL()">📋 Copy SQL Code</button>
+                
+                <ol start="3">
+                    <li>Click <strong>"Run"</strong> to execute the policies</li>
+                    <li>Come back here and test again</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <div class="step">
+        <h2>Step 3: Test Upload</h2>
+        <input type="file" id="testFile" accept="image/*" style="margin: 10px 0;">
+        <button onclick="testUpload()">🧪 Test Photo Upload</button>
+        <div id="uploadResult"></div>
+    </div>
+
+    <div class="step">
+        <h2>Step 4: Verify Fix</h2>
+        <button onclick="verifyFix()">✅ Verify Everything Works</button>
+        <div id="verifyResult"></div>
+    </div>
+
+    <script>
+        // Initialize Supabase client
+        const supabaseUrl = 'https://hvafquyruidsvteerdwf.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWZxdXlydWlkc3Z0ZWVyZHdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MzQ3ODcsImV4cCI6MjA3NTExMDc4N30.Eu74Afz66mSLrEJK1B2g4WG3OoOTL4dT55LABL_Eu0s';
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        function showResult(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="${type}">${content}</div>`;
+        }
+
+        async function diagnoseStorage() {
+            showResult('diagnosisResult', '🔍 Checking storage configuration...', 'info');
+            
+            try {
+                const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+                
+                if (listError) {
+                    showResult('diagnosisResult', `❌ Cannot access storage: ${listError.message}`, 'error');
+                    return;
+                }
+                
+                console.log('Available buckets:', buckets);
+                
+                const photosBucket = buckets.find(bucket => bucket.name === 'photos');
+                
+                if (!photosBucket) {
+                    showResult('diagnosisResult', 
+                        `❌ <strong>PROBLEM FOUND:</strong> Photos bucket is missing!<br>
+                        📦 Available buckets: ${buckets.map(b => b.name).join(', ') || 'None'}<br>
+                        🛠️ <strong>This is why your photo uploads are failing!</strong>`, 'error');
+                    
+                    document.getElementById('fixInstructions').style.display = 'block';
+                } else {
+                    showResult('diagnosisResult', 
+                        `✅ Photos bucket exists<br>
+                        📊 Bucket details: Public=${photosBucket.public}, Created=${photosBucket.created_at}`, 'success');
+                    
+                    // Test upload if bucket exists
+                    await testBasicUpload();
+                }
+                
+            } catch (error) {
+                showResult('diagnosisResult', `❌ Diagnosis failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testBasicUpload() {
+            try {
+                const testFile = new Blob(['test'], { type: 'text/plain' });
+                const { error: uploadError } = await supabase.storage
+                    .from('photos')
+                    .upload('test/diagnosis-test.txt', testFile);
+                
+                if (uploadError) {
+                    showResult('diagnosisResult', 
+                        document.getElementById('diagnosisResult').innerHTML + 
+                        `<br>❌ <strong>Upload test failed:</strong> ${uploadError.message}<br>
+                        🚨 <strong>Storage policies are missing!</strong>`, 'error');
+                    
+                    document.getElementById('fixInstructions').style.display = 'block';
+                } else {
+                    showResult('diagnosisResult', 
+                        document.getElementById('diagnosisResult').innerHTML + 
+                        `<br>✅ <strong>Upload test successful!</strong><br>
+                        🎉 <strong>Your storage should be working!</strong>`, 'success');
+                    
+                    // Clean up
+                    await supabase.storage.from('photos').remove(['test/diagnosis-test.txt']);
+                }
+            } catch (error) {
+                console.error('Upload test error:', error);
+            }
+        }
+
+        async function testUpload() {
+            const fileInput = document.getElementById('testFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showResult('uploadResult', '❌ Please select an image file first', 'error');
+                return;
+            }
+
+            showResult('uploadResult', '🧪 Testing photo upload...', 'info');
+            
+            try {
+                const fileName = `test-${Date.now()}.${file.name.split('.').pop()}`;
+                const filePath = `test-uploads/${fileName}`;
+                
+                const { data, error } = await supabase.storage
+                    .from('photos')
+                    .upload(filePath, file);
+                
+                if (error) {
+                    showResult('uploadResult', 
+                        `❌ <strong>Upload failed:</strong> ${error.message}<br>
+                        🚨 <strong>This is the same error your app is getting!</strong><br>
+                        📋 Follow the manual fix instructions above.`, 'error');
+                } else {
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('photos')
+                        .getPublicUrl(filePath);
+                    
+                    showResult('uploadResult', 
+                        `✅ <strong>Upload successful!</strong><br>
+                        📁 File path: ${filePath}<br>
+                        🔗 Public URL: <a href="${publicUrl}" target="_blank" style="color: #60a5fa;">${publicUrl}</a><br>
+                        🎉 <strong>Your photo uploads should now work in the app!</strong>`, 'success');
+                }
+            } catch (error) {
+                showResult('uploadResult', `❌ Upload test failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function verifyFix() {
+            showResult('verifyResult', '🔍 Running complete verification...', 'info');
+            
+            let results = [];
+            
+            try {
+                // Check 1: Bucket exists
+                const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+                if (listError) {
+                    results.push('❌ Cannot access storage');
+                } else {
+                    const photosBucket = buckets.find(bucket => bucket.name === 'photos');
+                    if (photosBucket) {
+                        results.push('✅ Photos bucket exists');
+                        if (photosBucket.public) {
+                            results.push('✅ Bucket is public');
+                        } else {
+                            results.push('❌ Bucket is not public');
+                        }
+                    } else {
+                        results.push('❌ Photos bucket missing');
+                    }
+                }
+                
+                // Check 2: Upload test
+                const testFile = new Blob(['verification test'], { type: 'text/plain' });
+                const { error: uploadError } = await supabase.storage
+                    .from('photos')
+                    .upload('test/verify-test.txt', testFile);
+                
+                if (uploadError) {
+                    results.push(`❌ Upload test failed: ${uploadError.message}`);
+                } else {
+                    results.push('✅ Upload test successful');
+                    // Clean up
+                    await supabase.storage.from('photos').remove(['test/verify-test.txt']);
+                }
+                
+                const allGood = results.every(r => r.startsWith('✅'));
+                
+                if (allGood) {
+                    showResult('verifyResult', 
+                        `<h3>🎉 ALL CHECKS PASSED!</h3>
+                        ${results.join('<br>')}
+                        <br><br><strong>🚀 Your photo uploads should now work perfectly in the app!</strong>
+                        <br>Try creating a profile with photos now.`, 'success');
+                } else {
+                    showResult('verifyResult', 
+                        `<h3>⚠️ Some issues remain:</h3>
+                        ${results.join('<br>')}
+                        <br><br><strong>📋 Please complete the manual fix instructions above.</strong>`, 'warning');
+                }
+                
+            } catch (error) {
+                showResult('verifyResult', `❌ Verification failed: ${error.message}`, 'error');
+            }
+        }
+
+        function copySQL() {
+            const sqlCode = document.getElementById('sqlCode').textContent;
+            navigator.clipboard.writeText(sqlCode).then(() => {
+                alert('✅ SQL code copied to clipboard! Paste it in Supabase SQL Editor.');
+            }).catch(() => {
+                alert('❌ Could not copy automatically. Please select and copy the SQL code manually.');
+            });
+        }
+
+        // Auto-run diagnosis on page load
+        window.onload = () => {
+            setTimeout(diagnoseStorage, 1000);
+        };
+    </script>
+</body>
+</html>

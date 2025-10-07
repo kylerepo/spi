@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Storage Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        input[type="file"] { margin: 10px 0; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <h1>Supabase Storage Configuration Test</h1>
+    
+    <div class="test-section info">
+        <h3>Instructions</h3>
+        <p>This tool will help you test your Supabase storage configuration:</p>
+        <ol>
+            <li>Make sure you've created the "photos" bucket in Supabase Dashboard</li>
+            <li>Applied the storage policies from SUPABASE_STORAGE_FIX.sql</li>
+            <li>Click "Test Connection" to verify setup</li>
+            <li>Try uploading a test image</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h3>Connection Test</h3>
+        <button onclick="testConnection()">Test Connection</button>
+        <div id="connectionResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Bucket Test</h3>
+        <button onclick="testBucket()">Check Photos Bucket</button>
+        <div id="bucketResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Upload Test</h3>
+        <input type="file" id="testFile" accept="image/*">
+        <button onclick="testUpload()">Test Upload</button>
+        <div id="uploadResult"></div>
+    </div>
+
+    <script>
+        // Initialize Supabase client
+        const supabaseUrl = 'https://hvafquyruidsvteerdwf.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWZxdXlydWlkc3Z0ZWVyZHdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MzQ3ODcsImV4cCI6MjA3NTExMDc4N30.Eu74Afz66mSLrEJK1B2g4WG3OoOTL4dT55LABL_Eu0s';
+        
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        function showResult(elementId, content, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="${type}"><pre>${content}</pre></div>`;
+        }
+
+        async function testConnection() {
+            try {
+                showResult('connectionResult', 'Testing connection...', 'info');
+                
+                const { data, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    showResult('connectionResult', `Connection Error: ${error.message}`, 'error');
+                } else {
+                    showResult('connectionResult', `✅ Connection successful!\nSession: ${data.session ? 'Authenticated' : 'Anonymous'}`, 'success');
+                }
+            } catch (err) {
+                showResult('connectionResult', `❌ Connection failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function testBucket() {
+            try {
+                showResult('bucketResult', 'Checking photos bucket...', 'info');
+                
+                const { data, error } = await supabase.storage.listBuckets();
+                
+                if (error) {
+                    showResult('bucketResult', `❌ Bucket check failed: ${error.message}`, 'error');
+                } else {
+                    const photosBucket = data.find(bucket => bucket.name === 'photos');
+                    if (photosBucket) {
+                        showResult('bucketResult', `✅ Photos bucket found!\nBucket details: ${JSON.stringify(photosBucket, null, 2)}`, 'success');
+                    } else {
+                        showResult('bucketResult', `❌ Photos bucket not found!\nAvailable buckets: ${data.map(b => b.name).join(', ')}`, 'error');
+                    }
+                }
+            } catch (err) {
+                showResult('bucketResult', `❌ Bucket test failed: ${err.message}`, 'error');
+            }
+        }
+
+        async function testUpload() {
+            const fileInput = document.getElementById('testFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showResult('uploadResult', '❌ Please select a file first', 'error');
+                return;
+            }
+
+            try {
+                showResult('uploadResult', 'Testing upload...', 'info');
+                
+                const fileName = `test-${Date.now()}.${file.name.split('.').pop()}`;
+                const filePath = `test-uploads/${fileName}`;
+                
+                const { data, error } = await supabase.storage
+                    .from('photos')
+                    .upload(filePath, file);
+                
+                if (error) {
+                    showResult('uploadResult', `❌ Upload failed: ${error.message}\n\nThis is likely the same error you're seeing in your app!`, 'error');
+                } else {
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('photos')
+                        .getPublicUrl(filePath);
+                    
+                    showResult('uploadResult', `✅ Upload successful!\nFile path: ${filePath}\nPublic URL: ${publicUrl}`, 'success');
+                }
+            } catch (err) {
+                showResult('uploadResult', `❌ Upload test failed: ${err.message}`, 'error');
+            }
+        }
+
+        // Auto-test connection on load
+        window.onload = () => {
+            testConnection();
+        };
+    </script>
+</body>
+</html>
