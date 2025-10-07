@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProfile } from '@/hooks/useProfile';
+import { useProfileNeon } from '@/hooks/useProfileNeon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,14 +19,14 @@ const INTERESTS = [
 ];
 
 export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
-  const { createProfile, uploadPhoto } = useProfile();
+  const { createProfile, uploadPhoto, updateProfile, completeProfileSetup } = useProfileNeon();
   const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
-    profile_type: 'single' as 'single' | 'couple',
-    name: '',
+    accountType: 'single' as 'single' | 'couple',
+    displayName: '',
     age: '',
     bio: '',
     location: '',
@@ -83,16 +83,26 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
       // Upload photos first
       const photoUrls: string[] = [];
       for (const file of photoFiles) {
-        const { url, error } = await uploadPhoto(file);
-        if (error) throw new Error(error);
-        if (url) photoUrls.push(url);
+        const result = await uploadPhoto(file);
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        if (result.url) {
+          photoUrls.push(result.url);
+        }
       }
 
-      // Create profile
-      const { error } = await createProfile({
-        ...formData,
-        age: parseInt(formData.age),
-        photos: photoUrls,
+      if (photoUrls.length < 2) {
+        throw new Error('Please upload at least 2 photos');
+      }
+
+      // Complete profile setup
+      const { error } = await completeProfileSetup({
+        profileData: {
+          ...formData,
+          age: parseInt(formData.age),
+          photos: photoUrls,
+        },
       });
 
       if (error) throw new Error(error);
@@ -114,7 +124,7 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
     }
   };
 
-  const canProceedStep1 = formData.name && formData.age && parseInt(formData.age) >= 18;
+  const canProceedStep1 = formData.displayName && formData.age && parseInt(formData.age) >= 18;
   const canProceedStep2 = formData.bio && formData.location;
   const canProceedStep3 = formData.interests.length >= 3;
   const canSubmit = photoFiles.length >= 2;
@@ -158,9 +168,9 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
               <div>
                 <Label className="text-white mb-2">Profile Type</Label>
                 <RadioGroup
-                  value={formData.profile_type}
+                  value={formData.accountType}
                   onValueChange={(value: 'single' | 'couple') =>
-                    setFormData({ ...formData, profile_type: value })
+                    setFormData({ ...formData, accountType: value })
                   }
                 >
                   <div className="flex items-center space-x-2">
@@ -175,12 +185,12 @@ export default function ProfileSetup({ onComplete }: ProfileSetupProps) {
               </div>
 
               <div>
-                <Label htmlFor="name" className="text-white">Name</Label>
+                <Label htmlFor="displayName" className="text-white">Display Name</Label>
                 <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Enter your name"
+                  id="displayName"
+                  value={formData.displayName}
+                  onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                  placeholder="Enter your display name"
                   className="bg-white/10 border-white/20 text-white"
                 />
               </div>

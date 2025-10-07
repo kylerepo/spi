@@ -1,6 +1,6 @@
 // Simplified server/index.ts
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
+import { registerNeonRoutes } from "./routes-neon";
 import { serveStatic, log } from "./vite";
 
 const app = express();
@@ -38,7 +38,7 @@ app.use((req, res, next) => {
 });
 
 // Your middleware and routes
-const server = await registerRoutes(app);
+const server = await registerNeonRoutes(app);
 
 // Error handling
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
