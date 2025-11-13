@@ -19,7 +19,7 @@ import ProfileSetupPage from './pages/ProfileSetup';
 import Support from './pages/Support';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
-import NotFound from './pages-not-found';
+import NotFound from './pages/not-found';
 import IsoPage from './pages/IsoPage';
 import Layout from './components/Layout';
 import Navigation from './components/Navigation';
@@ -58,10 +58,25 @@ function AppNavigator() {
           <>
             <Stack.Screen name="Hero" component={HeroSection} />
             <Stack.Screen name="Login">
-              {props => <LoginForm {...props} onLogin={signIn} />}
+              {props => (
+                <LoginForm
+                  {...props}
+                  onLogin={signIn}
+                  onSignup={() => props.navigation.navigate('Signup')}
+                  onForgotPassword={() => {
+                    /* TODO: Implement forgot password */
+                  }}
+                />
+              )}
             </Stack.Screen>
             <Stack.Screen name="Signup">
-              {props => <SignupForm {...props} onSignup={signUp} />}
+              {props => (
+                <SignupForm
+                  {...props}
+                  onSignup={signUp}
+                  onLogin={() => props.navigation.navigate('Login')}
+                />
+              )}
             </Stack.Screen>
           </>
         )}

@@ -16,7 +16,7 @@ export default function HeroSection({ navigation }) {
 
   return (
     <ImageBackground
-      source={{ uri: 'https://placekitten.com/800/1200' }} // Replace with your background image
+      source={require('../assets/background.png')}
       style={styles.backgroundImage}
       blurRadius={2}
     >

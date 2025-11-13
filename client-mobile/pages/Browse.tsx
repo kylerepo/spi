@@ -2,35 +2,42 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
 import Swiper from 'react-native-deck-swiper';
 import { Feather } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../lib/queryClient';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api-adapter';
 import { colors, globalStyles } from '../styles';
-
-// Mock data - replace with actual API call
-const mockProfiles = [
-  { id: '1', name: 'Jessica, 25', distance: '5 miles away', image: 'https://placekitten.com/800/1200' },
-  { id: '2', name: 'Amanda, 28', distance: '2 miles away', image: 'https://placekitten.com/801/1200' },
-  { id: '3', name: 'Sarah, 22', distance: '10 miles away', image: 'https://placekitten.com/802/1200' },
-];
 
 export default function Browse() {
   const [showFilters, setShowFilters] = useState(false);
   const swiperRef = useRef(null);
+  const queryClient = useQueryClient();
 
-  // const { data: profiles = [], isLoading } = useQuery({
-  //   queryKey: ['/api/browse/profiles'],
-  //   queryFn: () => apiRequest('/api/browse/profiles'),
-  // });
-  const profiles = mockProfiles;
-  const isLoading = false;
+  const { data: profiles = [], isLoading } = useQuery({
+    queryKey: ['browseProfiles'],
+    queryFn: () => api.getBrowseProfiles(),
+  });
+
+  const likeMutation = useMutation({
+    mutationFn: (profileId: string) => api.likeProfile(profileId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['browseProfiles'] });
+    },
+  });
+
+  const passMutation = useMutation({
+    mutationFn: (profileId: string) => api.passProfile(profileId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['browseProfiles'] });
+    },
+  });
 
   const renderCard = (card, index) => {
+    if (!card) return null;
     return (
       <View style={styles.card}>
-        <Image source={{ uri: card.image }} style={styles.cardImage} />
+        <Image source={card.photos?.[0] ? { uri: card.photos[0] } : require('../assets/default-avatar.png')} style={styles.cardImage} />
         <View style={styles.cardOverlay}>
-          <Text style={styles.cardName}>{card.name}</Text>
-          <Text style={styles.cardDistance}>{card.distance}</Text>
+          <Text style={styles.cardName}>{card.displayName}, {card.age}</Text>
+          <Text style={styles.cardDistance}>{card.location}</Text>
         </View>
       </View>
     );
@@ -67,8 +74,8 @@ export default function Browse() {
           infinite
           showSecondCard
           animateCardOpacity
-          onSwipedLeft={() => console.log('swiped left')}
-          onSwipedRight={() => console.log('swiped right')}
+          onSwipedLeft={(cardIndex) => passMutation.mutate(profiles[cardIndex].userId)}
+          onSwipedRight={(cardIndex) => likeMutation.mutate(profiles[cardIndex].userId)}
           overlayLabels={{
             left: {
               title: 'NOPE',
@@ -182,7 +189,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'white',
   },
-  buttonsContainer: {
+  buttonsContainer:. I have refactored the data fetching logic in `Browse.tsx` to use the standardized `api-adapter`. Now, I will examine `Matches.tsx` to determine if it also requires refactoring.
     flexDirection: 'row',
     justifyContent: 'space-around',
     padding: 20,

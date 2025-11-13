@@ -1,38 +1,50 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity } from 'react-native';
 import { GiftedChat } from 'react-native-gifted-chat';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api-adapter';
 import { colors, globalStyles } from '../styles';
 import { Feather } from '@expo/vector-icons';
-
-const mockConversations = [
-  { id: '1', name: 'Jessica', lastMessage: 'Hey!', avatar: 'https://placekitten.com/200/200' },
-  { id: '2', name: 'Amanda', lastMessage: 'Wanna hang out?', avatar: 'https://placekitten.com/201/200' },
-];
+import { useAuth } from '../hooks/useAuth';
+import { useProfile } from '../hooks/useProfile';
 
 export default function Messages() {
+  const { profile } = useProfile();
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (selectedConversation) {
-      setMessages([
-        {
-          _id: 1,
-          text: 'Hello developer',
-          createdAt: new Date(),
-          user: {
-            _id: 2,
-            name: 'React Native',
-            avatar: 'https://placeimg.com/140/140/any',
-          },
-        },
-      ]);
-    }
-  }, [selectedConversation]);
+  const { data: conversations = [], isLoading: conversationsLoading } = useQuery({
+    queryKey: ['matches'],
+    queryFn: () => api.getMatches(),
+  });
+
+  const { data: messages = [], isLoading: messagesLoading } = useQuery({
+    queryKey: ['messages', selectedConversation?.id],
+    queryFn: () => api.getMessages(selectedConversation.id),
+    enabled: !!selectedConversation,
+  });
+
+  const sendMessageMutation = useMutation({
+    mutationFn: (newMessage: { text: string }) =>
+      api.sendMessage(selectedConversation.id, newMessage.text),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversation.id] });
+    },
+  });
 
   const onSend = (newMessages = []) => {
-    setMessages(GiftedChat.append(messages, newMessages));
+    sendMessageMutation.mutate(newMessages[0]);
   };
+
+  const giftedChatMessages = messages.map(message => ({
+    _id: message.id,
+    text: message.content,
+    createdAt: new Date(message.created_at),
+    user: {
+      _id: message.sender_id,
+      name: '', // You might want to fetch sender's name
+    },
+  }));
 
   if (selectedConversation) {
     return (
@@ -41,14 +53,14 @@ export default function Messages() {
           <TouchableOpacity onPress={() => setSelectedConversation(null)}>
             <Feather name="arrow-left" size={24} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{selectedConversation.name}</Text>
+          <Text style={styles.headerTitle}>{selectedConversation.profile.displayName}</Text>
           <View style={{ width: 24 }} />
         </View>
         <GiftedChat
-          messages={messages}
+          messages={giftedChatMessages}
           onSend={onSend}
           user={{
-            _id: 1,
+            _id: profile?.id,
           }}
         />
       </View>
@@ -61,14 +73,13 @@ export default function Messages() {
         <Text style={styles.headerTitle}>Messages</Text>
       </View>
       <FlatList
-        data={mockConversations}
+        data={conversations}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.listItem} onPress={() => setSelectedConversation(item)}>
-            <Image source={{ uri: item.avatar }} style={styles.avatar} />
+            <Image source={item.profile.photos?.[0] ? { uri: item.profile.photos[0] } : require('../assets/default-avatar.png')} style={styles.avatar} />
             <View style={styles.listItemText}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.lastMessage}>{item.lastMessage}</Text>
+              <Text style={styles.name}>{item.profile.displayName}</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -111,9 +122,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.foreground,
-  },
-  lastMessage: {
-    fontSize: 14,
-    color: colors.mutedForeground,
   },
 });

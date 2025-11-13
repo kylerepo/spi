@@ -7,9 +7,17 @@
       "config": {
         "distDir": "dist/public"
       }
+    },
+    {
+      "src": "dist/api/index.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/dist/api/index.js"
+    },
     {
       "src": "/assets/(.*)",
       "dest": "/assets/$1"

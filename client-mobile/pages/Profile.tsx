@@ -1,34 +1,42 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api-adapter';
 import { colors, globalStyles } from '../styles';
 import { Feather } from '@expo/vector-icons';
-
-// Mock data
-const mockProfile = {
-  name: 'Jessica',
-  age: 25,
-  location: 'New York, NY',
-  avatar: 'https://placekitten.com/200/200',
-  photos: [
-    'https://placekitten.com/200/200',
-    'https://placekitten.com/201/200',
-    'https://placekitten.com/202/200',
-  ],
-  bio: 'Just a girl looking for her lobster.',
-  interests: ['BDSM', 'Threesomes', 'Role Play'],
-};
 
 export default function Profile() {
   const [selectedSection, setSelectedSection] = useState('profile');
 
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => api.getCurrentProfile(),
+  });
+
   const renderSection = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={globalStyles.text}>Loading profile...</Text>
+        </View>
+      );
+    }
+
+    if (!profile) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={globalStyles.text}>Profile not found.</Text>
+        </View>
+      );
+    }
+
     switch (selectedSection) {
       case 'profile':
-        return <ProfileSection profile={mockProfile} />;
+        return <ProfileSection profile={profile} />;
       case 'settings':
         return <SettingsSection />;
       default:
-        return <ProfileSection profile={mockProfile} />;
+        return <ProfileSection profile={profile} />;
     }
   };
 
@@ -55,12 +63,12 @@ export default function Profile() {
 const ProfileSection = ({ profile }) => (
   <View style={styles.section}>
     <View style={styles.profileHeader}>
-      <Image source={{ uri: profile.avatar }} style={styles.avatar} />
-      <Text style={styles.name}>{profile.name}, {profile.age}</Text>
+      <Image source={profile.photos?.[0] ? { uri: profile.photos[0] } : require('../assets/default-avatar.png')} style={styles.avatar} />
+      <Text style={styles.name}>{profile.displayName}, {profile.age}</Text>
       <Text style={styles.location}>{profile.location}</Text>
     </View>
     <View style={styles.photos}>
-      {profile.photos.map((photo, index) => (
+      {(profile.photos || []).map((photo, index) => (
         <Image key={index} source={{ uri: photo }} style={styles.photo} />
       ))}
     </View>
@@ -68,7 +76,7 @@ const ProfileSection = ({ profile }) => (
       <Text style={styles.bioText}>{profile.bio}</Text>
     </View>
     <View style={styles.interests}>
-      {profile.interests.map((interest, index) => (
+      {(profile.interests || []).map((interest, index) => (
         <View key={index} style={styles.interest}>
           <Text style={styles.interestText}>{interest}</Text>
         </View>
@@ -94,6 +102,12 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: colors.foreground,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
   },
   section: {
     padding: 20,
